@@ -121,7 +121,7 @@ view model =
                 Completed -> entry.state == Entry.Completed
         entries = List.map viewEntry (List.filter visibleOnly model.entries)
     in
-        Html.div [] (input model.input :: entries ++ [ viewFilters model.visibility ])
+        Html.div [] (input model.input :: entries ++ [ viewFilters model.visibility model.entries])
 
 viewEntry : Entry.Entry -> Html.Html
 viewEntry entry =
@@ -137,16 +137,26 @@ viewEntry entry =
         Entry.view context entry
 
 
-viewFilters : Visibility -> Html.Html
-viewFilters visibility =
+viewFilters : Visibility -> List Entry.Entry -> Html.Html
+viewFilters visibility entries =
     let
         onClick : Visibility -> Html.Attribute
         onClick v = Html.Events.onClick actions.address (SetVisibility v)
+
+        only v entry =
+            case v of
+                All -> True
+                Active -> entry.state == Entry.Active
+                Completed -> entry.state == Entry.Completed
+
+        all = List.length entries
+        active = List.length (List.filter (only Active) entries)
+        completed = List.length (List.filter (only Completed) entries)
     in
         Html.div []
-            [ Html.button [ onClick All ] [ Html.text "all" ]
-            , Html.button [ onClick Active ] [ Html.text "active" ]
-            , Html.button [ onClick Completed ] [ Html.text "completed" ]
+            [ Html.button [ onClick All ] [ Html.text ("all (" ++ (toString all) ++ ")") ]
+            , Html.button [ onClick Active ] [ Html.text ("active (" ++ (toString active) ++ ")") ]
+            , Html.button [ onClick Completed ] [ Html.text ("completed (" ++ (toString completed) ++ ")") ]
             ]
 
 main =
