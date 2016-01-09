@@ -102,9 +102,9 @@ func (a *args) ByName(name string) string {
 
 func (a *args) ByIndex(n int) string {
 	if len(a.values) < n {
-		return a.values[n]
+		return ""
 	}
-	return ""
+	return a.values[n]
 }
 
 type handler struct {

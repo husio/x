@@ -45,6 +45,22 @@ func StdJSONResp(w http.ResponseWriter, code int) {
 	JSONErr(w, http.StatusText(code), code)
 }
 
+func StdJSONErr(w http.ResponseWriter, code int) {
+	JSONErr(w, http.StatusText(code), code)
+}
+
+func JSONRedirect(w http.ResponseWriter, urlStr string, code int) {
+	w.Header().Set("Location", urlStr)
+	var content = struct {
+		Code     int
+		Location string
+	}{
+		Code:     code,
+		Location: urlStr,
+	}
+	JSONResp(w, content, code)
+}
+
 func StdHTMLResp(w http.ResponseWriter, code int) {
 	resp := struct {
 		Code int

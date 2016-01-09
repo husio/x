@@ -25,6 +25,36 @@ func handleMainPage(ctx context.Context, w http.ResponseWriter, r *http.Request)
 	web.JSONResp(w, content, http.StatusOK)
 }
 
+func handleEntityList(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	db := store.DB(ctx)
+	acc, ok := Authenticated(db, r)
+	if !ok {
+		web.StdJSONErr(w, http.StatusUnauthorized)
+		return
+	}
+
+	off := 0
+	if raw, ok := r.URL.Query()["offset"]; ok && len(raw) == 1 {
+		if n, err := strconv.ParseInt(raw[0], 0, 32); err == nil {
+			off = int(n)
+		}
+	}
+
+	entities, err := store.EntitiesByOwner(db, acc.ID, 200, off)
+	if err != nil {
+		log.Printf("cannot get entities for %d: %s", acc.ID, err)
+		web.StdJSONErr(w, http.StatusInternalServerError)
+		return
+	}
+
+	resp := struct {
+		Entities []*store.Entity
+	}{
+		Entities: entities,
+	}
+	web.JSONResp(w, resp, http.StatusOK)
+}
+
 func handleEntityDetails(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	entityID := web.Args(ctx).ByIndex(0)
 	db := store.DB(ctx)

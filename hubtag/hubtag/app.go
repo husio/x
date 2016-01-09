@@ -27,11 +27,12 @@ func NewApp(dbc *sql.DB) *App {
 		{"GET", "/login", handleLoginGithub},
 		{"GET", "/login/github/success", handleLoginGithubCallback},
 
-		{"POST", "/api/v1", handleEntityCreate},
-		{"GET", "/api/v1/{entity-id}", handleEntityDetails},
-		{"GET", "/api/v1/{entity-id}/votes", handleEntityVotes},
-		{"POST", "/api/v1/{entity-id}/upvote", handleAddVote},
-		{"DELETE", "/api/v1/{entity-id}/upvote", handleDelVote},
+		{"GET", "/api/v1/entities", handleEntityList},
+		{"POST", "/api/v1/entities", handleEntityCreate},
+		{"GET", "/api/v1/entities/{entity-id}", handleEntityDetails},
+		{"GET", "/api/v1/entities/{entity-id}/votes", handleEntityVotes},
+		{"POST", "/api/v1/entities/{entity-id}/upvote", handleAddVote},
+		{"DELETE", "/api/v1/entities/{entity-id}/upvote", handleDelVote},
 
 		// both handlers must be accesable via GET
 		{"GET", "/e/{entity-id}/banner.png", handleRenderBanner},
