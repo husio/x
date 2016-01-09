@@ -166,7 +166,7 @@ func handleRenderBanner(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	w.Header().Set("Content-Typee", "image/png")
+	w.Header().Set("Content-Type", "image/png")
 	if _, err := io.Copy(w, tag); err != nil {
 		log.Printf("cannot write response: %s", err)
 	}
