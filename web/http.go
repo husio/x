@@ -31,12 +31,16 @@ func JSONResp(w http.ResponseWriter, content interface{}, code int) {
 }
 
 func JSONErr(w http.ResponseWriter, errText string, code int) {
+	JSONErrs(w, []string{errText}, code)
+}
+
+func JSONErrs(w http.ResponseWriter, errs []string, code int) {
 	resp := struct {
 		Code   int
 		Errors []string `json:"errors"`
 	}{
 		Code:   code,
-		Errors: []string{errText},
+		Errors: errs,
 	}
 	JSONResp(w, resp, code)
 }
