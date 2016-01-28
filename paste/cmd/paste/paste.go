@@ -19,7 +19,6 @@ import (
 )
 
 var router = web.NewRouter("", web.Routes{
-	{"GET", `^/$`, handleHi},
 	{"GET", `^/login$`, auth.HandleLoginGithub},
 	{"GET", `^/login/github/success$`, auth.HandleLoginGithubCallback},
 
@@ -30,21 +29,25 @@ var router = web.NewRouter("", web.Routes{
 	{"DELETE", `^/api/v1/notes/{note-id:\d+}$`, notes.HandleDeleteNote},
 
 	{"GET,POST,PUT,DELETE", `^/api/.*`, handleApi404},
+
+	{"GET", `.*`, handleStaticDir},
 })
+
+var statics http.Handler
+
+func handleStaticDir(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	statics.ServeHTTP(w, r)
+}
 
 func handleApi404(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	web.StdJSONErr(w, http.StatusNotFound)
-}
-
-func handleHi(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	acc, _ := auth.Authenticated(pg.DB(ctx), r)
-	web.JSONResp(w, acc, http.StatusOK)
 }
 
 func main() {
 	log.SetFlags(log.Lshortfile)
 
 	conf := envconf.Parse()
+
 	httpAddr, _ := conf.String("HTTP", "localhost:8000", "HTTP server address")
 	oauth := &oauth2.Config{
 		ClientID:     conf.ReqString("GITHUB_KEY", "Github OAuth key"),
@@ -52,9 +55,14 @@ func main() {
 		Scopes:       []string{},
 		Endpoint:     oauth2gh.Endpoint,
 	}
+
 	dbname := conf.ReqString("DB_NAME", "Postgres database name")
 	dbuser := conf.ReqString("DB_USER", "Postgres database user")
 	dbpass := conf.ReqString("DB_PASS", "Postgres database password")
+
+	staticDir := conf.ReqString("STATICS", "Static directory path ('./public')")
+	statics = http.FileServer(http.Dir(staticDir))
+
 	conf.Finish()
 
 	ctx := context.Background()
