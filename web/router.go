@@ -43,7 +43,8 @@ func NewRouter(prefix string, routes Routes) *Router {
 		if err != nil {
 			panic(fmt.Sprintf("invalid routing path %q: %s", r.Path, err))
 		}
-		for _, method := range strings.Split(r.Methods, ",") {
+		methods := strings.Split(strings.TrimSpace(r.Methods), ",")
+		for _, method := range methods {
 			handlers[method] = append(handlers[method], handler{
 				rx:    rx,
 				names: names,

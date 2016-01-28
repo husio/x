@@ -11,9 +11,9 @@ import (
 	"golang.org/x/oauth2"
 	oauth2gh "golang.org/x/oauth2/github"
 
-	"github.com/husio/paste/notes"
 	"github.com/husio/x/auth"
 	"github.com/husio/x/envconf"
+	"github.com/husio/x/paste/notes"
 	"github.com/husio/x/storage/pg"
 	"github.com/husio/x/web"
 )
@@ -23,12 +23,18 @@ var router = web.NewRouter("", web.Routes{
 	{"GET", `^/login$`, auth.HandleLoginGithub},
 	{"GET", `^/login/github/success$`, auth.HandleLoginGithubCallback},
 
-	{"GET", `^/api/v1/notes$`, notes.HandleListNotes},
-	{"POST", `^/api/v1/notes$`, notes.HandleCreateNote},
-	{"PUT", `^/api/v1/notes/{note-id:\d+}$`, notes.HandleUpdateNote},
-	{"GET", `^/api/v1/notes/{note-id:\d+}$`, notes.HandleNoteDetails},
+	{"GET   ", `^/api/v1/notes$`, notes.HandleListNotes},
+	{"POST  ", `^/api/v1/notes$`, notes.HandleCreateNote},
+	{"PUT   ", `^/api/v1/notes/{note-id:\d+}$`, notes.HandleUpdateNote},
+	{"GET   ", `^/api/v1/notes/{note-id:\d+}$`, notes.HandleNoteDetails},
 	{"DELETE", `^/api/v1/notes/{note-id:\d+}$`, notes.HandleDeleteNote},
+
+	{"GET,POST,PUT,DELETE", `^/api/.*`, handleApi404},
 })
+
+func handleApi404(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	web.StdJSONErr(w, http.StatusNotFound)
+}
 
 func handleHi(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	acc, _ := auth.Authenticated(pg.DB(ctx), r)

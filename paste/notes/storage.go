@@ -51,7 +51,7 @@ func NoteByID(g pg.Getter, noteID int) (*Note, error) {
 	var n Note
 	err := g.Get(&n, `
 		SELECT * FROM notes
-		WHERE note_id = $1 AND expire_at < $2
+		WHERE note_id = $1 AND (expire_at < $2 OR expire_at IS NULL)
 		LIMIT 1
 	`, noteID, time.Now())
 	return &n, pg.CastErr(err)
