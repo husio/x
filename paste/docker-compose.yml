@@ -1,0 +1,19 @@
+paste:
+    build: .
+    ports:
+       - "8000:8000"
+    environment:
+        HTTP: ":8000"
+        GITHUB_KEY: cc3caa1736ce1df80942
+        GITHUB_SECRET: 3bacf771c685470940a38d97f27ed6ab0dc3f235
+        POSTGRES: "postgres://pg:l33t@postgres/postgres?sslmode=disable"
+        STATICS: /public
+    links:
+        - postgres
+
+postgres:
+    image: postgres:9.5
+    environment:
+        POSTGRES_PASSWORD: l33t
+        POSTGRES_USER: pg
+        LC_ALL: C.UTF-8

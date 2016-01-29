@@ -56,9 +56,7 @@ func main() {
 		Endpoint:     oauth2gh.Endpoint,
 	}
 
-	dbname := conf.ReqString("DB_NAME", "Postgres database name")
-	dbuser := conf.ReqString("DB_USER", "Postgres database user")
-	dbpass := conf.ReqString("DB_PASS", "Postgres database password")
+	postgresPath := conf.ReqString("POSTGRES", "Postgres database connection string")
 
 	staticDir := conf.ReqString("STATICS", "Static directory path ('./public')")
 	statics = http.FileServer(http.Dir(staticDir))
@@ -68,8 +66,7 @@ func main() {
 	ctx := context.Background()
 	ctx = auth.WithGithubOAuth(ctx, oauth)
 
-	db, err := sql.Open("postgres",
-		fmt.Sprintf("dbname='%s' user='%s' password='%s' sslmode=disable", dbname, dbuser, dbpass))
+	db, err := sql.Open("postgres", postgresPath)
 	if err != nil {
 		log.Fatalf("cannot connect to PostgreSQL: %s", err)
 	}
