@@ -73,10 +73,11 @@ func CreateAccount(e pg.Execer, githubID int, login string) (*Account, error) {
 	return &a, nil
 }
 
-func CreateSession(e pg.Execer, account int, key string) (string, error) {
+func CreateSession(e pg.Execer, account int, key, accessToken string) (string, error) {
 	_, err := e.Exec(`
-		INSERT INTO sessions (key, account, created) VALUES ($1, $2, $3)
-	`, key, account, time.Now())
+		INSERT INTO sessions (key, account, created, access_token)
+		VALUES ($1, $2, $3, $4)
+	`, key, account, time.Now(), accessToken)
 	return key, pg.CastErr(err)
 }
 
@@ -88,4 +89,15 @@ func SessionAccount(g pg.Getter, key string) (*Account, error) {
 		WHERE s.key = $1
 	`, key)
 	return &a, pg.CastErr(err)
+}
+
+func AccessToken(g pg.Getter, accountID int) (string, error) {
+	var token string
+	err := g.Get(&token, `
+		SELECT access_token FROM sessions
+		WHERE account = $1
+		ORDER BY created DESC
+		LIMIT 1
+	`, accountID)
+	return token, pg.CastErr(err)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/github"
@@ -28,8 +29,18 @@ func githubOAuth(ctx context.Context) *oauth2.Config {
 
 func HandleLoginGithub(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	url := githubOAuth(ctx).AuthCodeURL(state, oauth2.AccessTypeOnline)
+	if next := r.URL.Query().Get("next"); next != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:    nextCookieName,
+			Path:    "/",
+			Value:   next,
+			Expires: time.Now().Add(time.Minute * 15),
+		})
+	}
 	web.JSONRedirect(w, url, http.StatusTemporaryRedirect)
 }
+
+const nextCookieName = "loginNext"
 
 func HandleLoginGithubCallback(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("state") != state {
@@ -46,7 +57,6 @@ func HandleLoginGithubCallback(ctx context.Context, w http.ResponseWriter, r *ht
 		web.JSONRedirect(w, "/", http.StatusTemporaryRedirect)
 		return
 	}
-
 	cli := github.NewClient(conf.Client(oauth2.NoContext, token))
 	user, _, err := cli.Users.Get("")
 	if err != nil {
@@ -80,7 +90,7 @@ func HandleLoginGithubCallback(ctx context.Context, w http.ResponseWriter, r *ht
 		}
 	}
 
-	if err := authenticate(tx, w, acc.AccountID); err != nil {
+	if err := authenticate(tx, w, acc.AccountID, token.AccessToken); err != nil {
 		log.Printf("cannot authenticate %#v: %s", acc, err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -91,11 +101,22 @@ func HandleLoginGithubCallback(ctx context.Context, w http.ResponseWriter, r *ht
 		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 		return
 	}
-	web.JSONRedirect(w, "/", http.StatusTemporaryRedirect)
+
+	next := "/"
+	if c, err := r.Cookie(nextCookieName); err == nil {
+		next = c.Value
+		http.SetCookie(w, &http.Cookie{
+			Name:    nextCookieName,
+			Path:    "/",
+			Value:   "",
+			Expires: time.Now().Add(-24 * time.Hour),
+		})
+	}
+	web.JSONRedirect(w, next, http.StatusTemporaryRedirect)
 }
 
-func authenticate(e pg.Execer, w http.ResponseWriter, account int) error {
-	key, err := CreateSession(e, account, randStr(48))
+func authenticate(e pg.Execer, w http.ResponseWriter, account int, token string) error {
+	key, err := CreateSession(e, account, randStr(48), token)
 	if err != nil {
 		return err
 	}
@@ -115,5 +136,6 @@ func randStr(length int) string {
 	if n, err := rand.Read(b); err != nil || n != length {
 		panic(fmt.Sprintf("cannot read random value: %s", err))
 	}
-	return base32.StdEncoding.EncodeToString(b)[:length]
+	s := base32.StdEncoding.EncodeToString(b)
+	return strings.ToLower(s[:length])
 }

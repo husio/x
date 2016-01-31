@@ -3,6 +3,7 @@ package pg
 import (
 	"database/sql"
 	"errors"
+	"log"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -27,7 +28,11 @@ func WithDB(ctx context.Context, dbc *sql.DB) context.Context {
 }
 
 func DB(ctx context.Context) *sqlx.DB {
-	return ctx.Value("storage.pg:db").(*sqlx.DB)
+	db := ctx.Value("storage.pg:db").(*sqlx.DB)
+	if db == nil {
+		log.Print("missing database in context")
+	}
+	return db
 }
 
 func CastErr(err error) error {

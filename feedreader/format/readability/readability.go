@@ -1,0 +1,4 @@
+package readability
+
+func Fetch() {
+}
