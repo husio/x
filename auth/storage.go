@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"log"
 	"net/http"
 	"time"
 
@@ -22,7 +21,6 @@ func Authenticated(g pg.Getter, r *http.Request) (*Account, bool) {
 
 	a, err := SessionAccount(g, key)
 	if err != nil {
-		log.Printf("cannot get account for session %q: %s", key, err)
 		return nil, false
 	}
 	return a, true
