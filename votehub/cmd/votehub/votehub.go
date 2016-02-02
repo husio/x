@@ -12,6 +12,7 @@ import (
 	"github.com/husio/x/storage/pg"
 	"github.com/husio/x/votehub/help"
 	"github.com/husio/x/votehub/votes"
+	"github.com/husio/x/votehub/webhooks"
 	"github.com/husio/x/web"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
@@ -23,8 +24,9 @@ var router = web.NewRouter("", web.Routes{
 	{"GET", `^/login$`, auth.HandleLoginGithub},
 	{"GET", `^/login/github/success$`, auth.HandleLoginGithubCallback},
 
-	{"GET", `^/create-webhooks$`, votes.HandleCreateWebhooks},
-	{"POST", `^/webhooks/issues$`, votes.HandleIssuesWebhookEvent},
+	{"GET ", `^/webhooks/create$`, webhooks.HandleListWebhooks},
+	{"POST", `^/webhooks/create$`, webhooks.HandleCreateWebhooks},
+	{"POST", `^/webhooks/issues$`, webhooks.HandleIssuesWebhookEvent},
 
 	{"GET", `^/v/{counter-id:\d+}/upvote$`, votes.HandleClickUpvote},
 	{"GET", `^/v/{counter-id:\d+}/banner.svg$`, votes.HandleRenderSVGBanner},
@@ -33,7 +35,6 @@ var router = web.NewRouter("", web.Routes{
 })
 
 func main() {
-	// TODO: parse to struct
 	conf := envconf.Parse()
 	httpAddr, _ := conf.String("HTTP", "localhost:8000", "HTTP server address")
 	oauth := &oauth2.Config{

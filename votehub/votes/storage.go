@@ -82,7 +82,7 @@ func CountersByOwner(s pg.Selector, owner int, limit, offset int) ([]*Counter, e
 	var res []*Counter
 	err := s.Select(&res, `
 		SELECT * FROM counters
-		WHERE owner = $1
+		WHERE owner_id = $1
 		ORDER BY created DESC
 		LIMIT $2 OFFSET $3
 	`, owner, limit, offset)

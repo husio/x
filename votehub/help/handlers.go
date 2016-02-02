@@ -49,8 +49,11 @@ var tmpl = template.Must(core.NewTemplate(`
 				<h3>Latest entities</h3>
 				{{range .Counters}}
 					<div>
-						{{.Value}}) <a href="{{.URL}}">{{.URL}}</a>
+						<a href="{{.URL}}">{{.URL}}</a>
 						<small>{{.Description}}</small>
+						<a href="/v/{{.CounterID}}/upvote">
+							<img src="/v/{{.CounterID}}/banner.svg">
+						</a>
 					</div>
 				{{end}}
 			{{else}}
