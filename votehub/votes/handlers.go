@@ -1,6 +1,7 @@
 package votes
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -75,6 +76,73 @@ func HandleCreateWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Re
 		}
 		fmt.Printf("%+v\n", hook)
 	}
+}
+
+func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	if ev := r.Header.Get("X-Github-Event"); ev != "issues" {
+		log.Printf("issues handler got %q event", ev)
+		web.StdJSONResp(w, http.StatusBadRequest)
+		return
+	}
+
+	var input struct {
+		Action string `json:"action"`
+		Issue  struct {
+			URL    string `json:"url"`
+			Number int    `json:"number"`
+			Title  string `json:"title"`
+			Body   string `json:"body"`
+		} `json:"issue"`
+		Repository struct {
+			ID       int    `json:"id"`
+			Name     string `json:"name"`
+			FullName string `json:"full_name"`
+			Owner    struct {
+				Login string `json:"login"`
+				ID    int    `json:"id"`
+			} `json:"owner"`
+		} `json:"repository"`
+	}
+
+	// TODO: check X-Hub-Signature
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		log.Printf("cannot decode webhook body: %s", err)
+		web.JSONErr(w, "cannot decode body", http.StatusBadRequest)
+		return
+	}
+
+	tx, err := pg.DB(ctx).Beginx()
+	if err != nil {
+		log.Printf("cannot start transaction: %s", err)
+		web.StdJSONErr(w, http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	token, err := auth.AccessToken(tx, input.Repository.Owner.ID)
+	if err != nil {
+		log.Printf("cannot get access token for %d: %s", input.Repository.Owner.ID, err)
+		stdHTMLResp(w, http.StatusInternalServerError)
+		return
+	}
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: token},
+	)
+	client := github.NewClient(oauth2.NewClient(oauth2.NoContext, ts))
+	body := "+\n" + input.Issue.Body
+	_, _, err = client.Issues.Edit(
+		input.Repository.Owner.Login,
+		input.Repository.Name,
+		input.Issue.Number,
+		&github.IssueRequest{Body: &body})
+	if err != nil {
+		log.Printf("cannot update %s, %d issue: %s", input.Repository.FullName, input.Issue.Number, err)
+		web.StdJSONErr(w, http.StatusInternalServerError)
+		return
+	}
+
+	web.StdJSONResp(w, http.StatusOK)
 }
 
 func HandleUpvote(ctx context.Context, w http.ResponseWriter, r *http.Request) {
