@@ -26,8 +26,8 @@ var router = web.NewRouter("", web.Routes{
 	{"GET", `^/create-webhooks$`, votes.HandleCreateWebhooks},
 	{"POST", `^/webhooks/issues$`, votes.HandleIssuesWebhookEvent},
 
-	{"GET", `^/e/{counter-id:\d+}/upvote$`, votes.HandleClickUpvote},
-	{"GET", `^/e/{counter-id:\d+}/banner.svg$`, votes.HandleRenderSVGBanner},
+	{"GET", `^/v/{counter-id:\d+}/upvote$`, votes.HandleClickUpvote},
+	{"GET", `^/v/{counter-id:\d+}/banner.svg$`, votes.HandleRenderSVGBanner},
 
 	{"GET,POST,PUT,DELETE", `.*`, handle404},
 })

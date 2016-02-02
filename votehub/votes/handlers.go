@@ -123,14 +123,29 @@ func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *htt
 	token, err := auth.AccessToken(tx, input.Repository.Owner.ID)
 	if err != nil {
 		log.Printf("cannot get access token for %d: %s", input.Repository.Owner.ID, err)
-		stdHTMLResp(w, http.StatusInternalServerError)
+		web.StdJSONErr(w, http.StatusInternalServerError)
 		return
 	}
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
 	client := github.NewClient(oauth2.NewClient(oauth2.NoContext, ts))
-	body := "+\n" + input.Issue.Body
+
+	counter, err := CreateCounter(tx, Counter{
+		Description: fmt.Sprintf("Issue: %s", input.Issue.Title),
+		OwnerID:     input.Repository.Owner.ID,
+		URL:         input.Issue.URL,
+	})
+	if err != nil {
+		log.Printf("cannot create counter for %q issue: %s", input.Issue.URL, err)
+		web.StdJSONErr(w, http.StatusInternalServerError)
+		return
+	}
+
+	body := fmt.Sprintf(`![votehub](https://votehub.eu/v/%d/banner.svg)
+
+
+`, counter.CounterID) + input.Issue.Body
 	_, _, err = client.Issues.Edit(
 		input.Repository.Owner.Login,
 		input.Repository.Name,
@@ -138,6 +153,12 @@ func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *htt
 		&github.IssueRequest{Body: &body})
 	if err != nil {
 		log.Printf("cannot update %s, %d issue: %s", input.Repository.FullName, input.Issue.Number, err)
+		web.StdJSONErr(w, http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("cannot commit transaction: %s", err)
 		web.StdJSONErr(w, http.StatusInternalServerError)
 		return
 	}

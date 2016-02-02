@@ -7,14 +7,14 @@ import (
 )
 
 type Vote struct {
-	Entity  string
-	Account int
-	Created time.Time
+	CounterID int `db:"counter_id"`
+	AccountID int `db:"account_id"`
+	Created   time.Time
 }
 
 type Counter struct {
-	CounterID   int
-	OwnerID     int
+	CounterID   int `db:"counter_id"`
+	OwnerID     int `db:"owner_id"`
 	Created     time.Time
 	Description string
 	Value       int
@@ -47,10 +47,10 @@ func DelVote(e pg.Execer, counterID, accountID int) error {
 
 func CreateCounter(g pg.Getter, c Counter) (*Counter, error) {
 	err := g.Get(&c, `
-		INSERT INTO counters (value, owner, created, description, url)
+		INSERT INTO counters (value, owner_id, created, description, url)
 		VALUES (0, $1, $2, $3, $4)
 		RETURNING *
-	`, 0, c.OwnerID, time.Now(), c.Description, c.URL)
+	`, c.OwnerID, time.Now(), c.Description, c.URL)
 	return &c, pg.CastErr(err)
 }
 
@@ -70,11 +70,11 @@ func CounterVotesCount(g pg.Getter, counterID int) (int, error) {
 	return cnt, pg.CastErr(err)
 }
 
-func CounterByID(g pg.Getter, id int) (*Counter, error) {
+func CounterByID(g pg.Getter, counterID int) (*Counter, error) {
 	var c Counter
 	err := g.Get(&c, `
-		SELECT * FROM counters WHERE id = $1 LIMIT 1
-	`, id)
+		SELECT * FROM counters WHERE counter_id = $1 LIMIT 1
+	`, counterID)
 	return &c, pg.CastErr(err)
 }
 

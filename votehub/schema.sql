@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS counters (
     owner_id    INTEGER NOT NULL REFERENCES accounts(account_id),
     created     TIMESTAMPTZ NOT NULL,
     url         TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     value       INTEGER DEFAULT 0
 );
 
@@ -22,7 +23,6 @@ CREATE TABLE IF NOT EXISTS votes (
     counter_id  INTEGER NOT NULL REFERENCES counters(counter_id),
     account_id  INTEGER NOT NULL REFERENCES accounts(account_id),
     created     TIMESTAMPTZ NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
 
     PRIMARY KEY(counter_id, account_id)
 );
@@ -35,7 +35,7 @@ BEGIN
     IF (TG_OP = 'INSERT') THEN
         UPDATE counters
             SET value = (SELECT COUNT(*) FROM votes WHERE counter_id = NEW.counter_id)
-            WHERE id = NEW.counter_id;
+            WHERE counter_id = NEW.counter_id;
         RETURN NEW;
     END IF;
 
