@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/google/go-github/github"
@@ -111,7 +112,7 @@ func HandleCreateWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Re
 func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	if ev := r.Header.Get("X-Github-Event"); ev != "issues" {
 		log.Printf("issues handler got %q event", ev)
-		web.StdJSONResp(w, http.StatusBadRequest)
+		web.StdJSONErr(w, http.StatusBadRequest)
 		return
 	}
 
@@ -161,22 +162,47 @@ func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *htt
 	)
 	client := github.NewClient(oauth2.NewClient(oauth2.NoContext, ts))
 
-	counter, err := votes.CreateCounter(tx, votes.Counter{
-		Description: fmt.Sprintf("Issue: %s", input.Issue.Title),
-		OwnerID:     input.Repository.Owner.ID,
-		URL:         input.Issue.URL,
+	var (
+		replaced int
+		cerr     error
+	)
+	body := findTagsRx.ReplaceAllStringFunc(input.Issue.Body, func(tag string) string {
+		// do not allow to create more than 20 tags at once
+		if cerr != nil || replaced > 20 {
+			return ""
+		}
+		title := strings.TrimSpace(input.Issue.Title)
+		if len(title) > 200 {
+			title = title[:200]
+		}
+		desc := fmt.Sprintf("Issue %d: %s", input.Issue.Number, title)
+		if len(tag) > 10 && tag[9:len(tag)-1] != "" { // [votehub:(DESC)]
+			extra := strings.TrimSpace(tag[9 : len(tag)-1])
+			desc = fmt.Sprintf("%s (%s)", desc, extra)
+		}
+
+		counter, err := votes.CreateCounter(tx, votes.Counter{
+			Description: desc,
+			OwnerID:     input.Repository.Owner.ID,
+			URL:         input.Issue.URL,
+		})
+		if err != nil {
+			cerr = err
+			log.Printf("cannot create counter for %q issue: %s", input.Issue.URL, err)
+			return ""
+		}
+
+		replaced++
+		return fmt.Sprintf(" [![votehub](https://votehub.eu%s)](https://votehub.eu%s) ",
+			web.Reverse(ctx, "counters-banner-svg", counter.CounterID),
+			web.Reverse(ctx, "counters-upvote", counter.CounterID))
 	})
-	if err != nil {
-		log.Printf("cannot create counter for %q issue: %s", input.Issue.URL, err)
+
+	if cerr != nil {
 		web.StdJSONErr(w, http.StatusInternalServerError)
 		return
 	}
 
-	// TODO replace tag if present
-	body := fmt.Sprintf(`![votehub](https://votehub.eu/v/%d/banner.svg)
-
-
-`, counter.CounterID) + input.Issue.Body
 	_, _, err = client.Issues.Edit(
 		input.Repository.Owner.Login,
 		input.Repository.Name,
@@ -196,3 +222,5 @@ func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *htt
 
 	web.StdJSONResp(w, http.StatusOK)
 }
+
+var findTagsRx = regexp.MustCompile(`\[votehub\]|\[votehub\s+[^\]]{0,100}\]`)

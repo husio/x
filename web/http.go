@@ -46,7 +46,7 @@ func JSONErrs(w http.ResponseWriter, errs []string, code int) {
 }
 
 func StdJSONResp(w http.ResponseWriter, code int) {
-	JSONErr(w, http.StatusText(code), code)
+	JSONResp(w, http.StatusText(code), code)
 }
 
 func StdJSONErr(w http.ResponseWriter, code int) {

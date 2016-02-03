@@ -31,7 +31,7 @@ var router = web.NewRouter("", web.Routes{
 	web.POST(`/webhooks/issues`, "webhooks-issues-callback", webhooks.HandleIssuesWebhookEvent),
 
 	web.GET(`/v/{counter-id:\d+}/upvote`, "counters-upvote", votes.HandleClickUpvote),
-	web.GET(`/v/{counter-id:\d+}/banner.svg`, "countes-banner-svg", votes.HandleRenderSVGBanner),
+	web.GET(`/v/{counter-id:\d+}/banner.svg`, "counters-banner-svg", votes.HandleRenderSVGBanner),
 
 	web.ANY(`.*`, "", handle404),
 })
