@@ -73,7 +73,7 @@ func HandleCreateWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Re
 	}
 	if len(repositories) == 0 {
 		log.Printf("no repositories to create: %v", r.Form)
-		http.Redirect(w, r, "/webhooks/create", http.StatusFound)
+		http.Redirect(w, r, web.Reverse(ctx, "webhooks-create"), http.StatusFound)
 		return
 	}
 
@@ -95,8 +95,8 @@ func HandleCreateWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Re
 			Active: github.Bool(true),
 			Events: []string{"issues"},
 			Config: map[string]interface{}{
-				"url":          "https://example.com/webhooks", // TODO
-				"secret":       "TODO-secret",                  // TODO
+				"url":          "https://votehub.eu/" + web.Reverse(ctx, "webhooks-create"),
+				"secret":       "TODO-secret", // TODO
 				"content_type": "json",
 			},
 		})

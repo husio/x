@@ -20,20 +20,20 @@ import (
 )
 
 var router = web.NewRouter("", web.Routes{
-	{"GET", `^/login$`, auth.HandleLoginGithub},
-	{"GET", `^/login/github/success$`, auth.HandleLoginGithubCallback},
+	web.GET(`/login`, "login", auth.HandleLoginGithub),
+	web.GET(`/login/github/success`, "login-github-callback", auth.HandleLoginGithubCallback),
 
-	{"GET", `^/$`, votes.HandleListCounters},
-	{"GET", `^/counters$`, votes.HandleListCounters},
+	web.GET(`/`, "", votes.HandleListCounters),
+	web.GET(`/counters`, "counters-listing", votes.HandleListCounters),
 
-	{"GET ", `^/webhooks/create$`, webhooks.HandleListWebhooks},
-	{"POST", `^/webhooks/create$`, webhooks.HandleCreateWebhooks},
-	{"POST", `^/webhooks/issues$`, webhooks.HandleIssuesWebhookEvent},
+	web.GET(`/webhooks/create`, "webhooks-listing", webhooks.HandleListWebhooks),
+	web.POST(`/webhooks/create`, "webhooks-create", webhooks.HandleCreateWebhooks),
+	web.POST(`/webhooks/issues`, "webhooks-issues-callback", webhooks.HandleIssuesWebhookEvent),
 
-	{"GET", `^/v/{counter-id:\d+}/upvote$`, votes.HandleClickUpvote},
-	{"GET", `^/v/{counter-id:\d+}/banner.svg$`, votes.HandleRenderSVGBanner},
+	web.GET(`/v/{counter-id:\d+}/upvote`, "counters-upvote", votes.HandleClickUpvote),
+	web.GET(`/v/{counter-id:\d+}/banner.svg`, "countes-banner-svg", votes.HandleRenderSVGBanner),
 
-	{"GET,POST,PUT,DELETE", `.*`, handle404},
+	web.ANY(`.*`, "", handle404),
 })
 
 func main() {
@@ -53,6 +53,7 @@ func main() {
 	ctx := context.Background()
 	ctx = auth.WithGithubOAuth(ctx, oauth)
 	ctx = cache.WithIntCache(ctx)
+	ctx = web.WithRouter(ctx, router)
 
 	db, err := sql.Open("postgres",
 		fmt.Sprintf("dbname='%s' user='%s' password='%s' sslmode=disable", dbname, dbuser, dbpass))
