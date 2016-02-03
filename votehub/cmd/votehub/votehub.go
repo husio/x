@@ -10,7 +10,7 @@ import (
 	"github.com/husio/x/auth"
 	"github.com/husio/x/envconf"
 	"github.com/husio/x/storage/pg"
-	"github.com/husio/x/votehub/help"
+	"github.com/husio/x/votehub/cache"
 	"github.com/husio/x/votehub/votes"
 	"github.com/husio/x/votehub/webhooks"
 	"github.com/husio/x/web"
@@ -20,9 +20,11 @@ import (
 )
 
 var router = web.NewRouter("", web.Routes{
-	{"GET", `^/$`, help.HandleHelp},
 	{"GET", `^/login$`, auth.HandleLoginGithub},
 	{"GET", `^/login/github/success$`, auth.HandleLoginGithubCallback},
+
+	{"GET", `^/$`, votes.HandleListCounters},
+	{"GET", `^/counters$`, votes.HandleListCounters},
 
 	{"GET ", `^/webhooks/create$`, webhooks.HandleListWebhooks},
 	{"POST", `^/webhooks/create$`, webhooks.HandleCreateWebhooks},
@@ -50,6 +52,7 @@ func main() {
 
 	ctx := context.Background()
 	ctx = auth.WithGithubOAuth(ctx, oauth)
+	ctx = cache.WithIntCache(ctx)
 
 	db, err := sql.Open("postgres",
 		fmt.Sprintf("dbname='%s' user='%s' password='%s' sslmode=disable", dbname, dbuser, dbpass))

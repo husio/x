@@ -5,130 +5,63 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/google/go-github/github"
 	"github.com/husio/x/auth"
 	"github.com/husio/x/storage/pg"
+	"github.com/husio/x/votehub/cache"
 	"github.com/husio/x/votehub/core"
 	"github.com/husio/x/web"
 
 	"golang.org/x/net/context"
-	"golang.org/x/oauth2"
 )
 
-func HandleCreateWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	stdHTMLResp(w, http.StatusNotImplemented)
-	return
-
+func HandleListCounters(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	db := pg.DB(ctx)
 	account, ok := auth.AuthRequired(db, w, r)
 	if !ok {
 		return
 	}
 
-	token, err := auth.AccessToken(db, account.AccountID)
+	counters, err := CountersByOwner(db, account.AccountID, 1000, 0)
 	if err != nil {
-		log.Printf("cannot get access token for %s: %s", account.AccountID, err)
+		log.Printf("cannot list counter for %d account: %s", account.AccountID, err)
 		stdHTMLResp(w, http.StatusInternalServerError)
 		return
 	}
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
 
-	client := github.NewClient(oauth2.NewClient(oauth2.NoContext, ts))
-
-	repositories, _, err := client.Repositories.ListByUser("husio", nil)
-	if err != nil {
-		panic(err)
+	context := struct {
+		Counters []*Counter
+	}{
+		Counters: counters,
 	}
-
-	var public []github.Repository
-	for _, repo := range repositories {
-		if repo.Private != nil && *repo.Private {
-			continue
-		}
-
-		if *repo.Name != "x" {
-			continue
-		}
-		public = append(public, repo)
-	}
-
-	for _, repo := range public {
-		hook, _, err := client.Repositories.CreateHook("husio", *repo.Name, &github.Hook{
-			Name: github.String("web"),
-			Events: []string{
-				"issues",
-				"commit_comment",
-				"gollum", // any time a Wiki page is updated
-			},
-			Config: map[string]interface{}{
-				"url":          "https://example.com/webhooks",
-				"content_type": "json",
-			},
-		})
-		if err != nil {
-			log.Printf("cannot create %q hook: %s", *repo.Name, err)
-			continue
-		}
-		fmt.Printf("%+v\n", hook)
-	}
-}
-
-func HandleUpvote(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	tx, err := pg.DB(ctx).Beginx()
-	if err != nil {
-		log.Printf("cannot create transcation: %s", err)
-		web.StdJSONErr(w, http.StatusServiceUnavailable)
-		return
-	}
-	defer tx.Rollback()
-
-	account, ok := auth.Authenticated(tx, r)
-	if !ok {
-		web.JSONErr(w, "Authentication required", http.StatusUnauthorized)
-		return
-	}
-
-	counterID := stoi(web.Args(ctx).ByIndex(0))
-	if _, err := AddVote(tx, counterID, account.AccountID); err != nil {
-		if err == pg.ErrConflict {
-			web.StdJSONResp(w, http.StatusConflict)
-		} else {
-			log.Printf("cannot add vote: %s", err)
-			web.StdJSONResp(w, http.StatusInternalServerError)
-		}
-		return
-	}
-
-	if err := tx.Commit(); err != nil {
-		log.Printf("cannot commit transaction: %s", err)
-		web.StdJSONErr(w, http.StatusServiceUnavailable)
-		return
-	}
-
-	web.StdJSONResp(w, http.StatusOK)
+	core.Render(tmpl, w, "counters-list", context)
 }
 
 func HandleRenderSVGBanner(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	counterID := stoi(web.Args(ctx).ByIndex(0))
-	counter, err := CounterByID(pg.DB(ctx), counterID)
-	if err != nil {
-		if err == pg.ErrNotFound {
-			stdHTMLResp(w, http.StatusNotFound)
-		} else {
-			log.Printf("cannot get counter %d vote: %s", counterID, err)
-			stdHTMLResp(w, http.StatusInternalServerError)
+	cch := cache.IntCache(ctx)
+	value, ok := cch.Get(fmt.Sprintf("counters:%d", counterID))
+	if !ok {
+		counter, err := CounterByID(pg.DB(ctx), counterID)
+		if err != nil {
+			if err == pg.ErrNotFound {
+				stdHTMLResp(w, http.StatusNotFound)
+			} else {
+				log.Printf("cannot get counter %d vote: %s", counterID, err)
+				stdHTMLResp(w, http.StatusInternalServerError)
+			}
+			return
 		}
-		return
+		value = int64(counter.Value)
+		cch.Put(fmt.Sprintf("counters:%d", counterID), value)
 	}
 
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Expires", zeroTime)
-	RenderBadge(w, counter.Value)
+	RenderBadge(w, int(value))
 }
 
 func stoi(s string) int {
@@ -185,7 +118,10 @@ func HandleClickUpvote(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	if ref := r.Referer(); ref != "" {
+	// cache expiration, because new couter happened
+	cache.IntCache(ctx).Del(fmt.Sprintf("counters:%d", counterID))
+
+	if ref := r.Referer(); ref != "" && !strings.HasSuffix(r.URL.Path, "banner.svg") {
 		// TODO render html page with explanation instead
 		http.Redirect(w, r, ref, http.StatusFound)
 	} else {

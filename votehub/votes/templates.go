@@ -27,6 +27,31 @@ var tmpl = template.Must(core.NewTemplate(`
 	{{template "footer" .}}
 {{end}}
 
+
+{{define "counters-list"}}
+	{{template "header" .}}
+
+	<div class="row">
+		<div class="col-md-12">
+			<h1>Counters</h1>
+			{{range .Counters}}
+				<div class="row">
+					<div class="col-md-12">
+						<img src="/v/{{.CounterID}}/banner.svg">
+						<p>
+							{{.Description}}
+							<small>{{.Created}}</small>
+						</p>
+						<a href="{{.URL}}">{{.URL}}</a>
+					</div>
+				</div>
+			{{end}}
+		</div>
+	</div>
+
+	{{template "footer" .}}
+{{end}}
+
 `))
 
 func stdHTMLResp(w http.ResponseWriter, code int) {
