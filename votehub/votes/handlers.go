@@ -24,7 +24,14 @@ func HandleListCounters(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	counters, err := CountersByOwner(db, account.AccountID, 1000, 0)
+	counters, err := CountersByOwner(db, account.AccountID, 30, 0)
+	if err != nil {
+		log.Printf("cannot list counter for %d account: %s", account.AccountID, err)
+		stdHTMLResp(w, http.StatusInternalServerError)
+		return
+	}
+
+	votes, err := VotesByOwner(db, account.AccountID, 30, 0)
 	if err != nil {
 		log.Printf("cannot list counter for %d account: %s", account.AccountID, err)
 		stdHTMLResp(w, http.StatusInternalServerError)
@@ -33,8 +40,10 @@ func HandleListCounters(ctx context.Context, w http.ResponseWriter, r *http.Requ
 
 	context := struct {
 		Counters []*Counter
+		Votes    []*VoteWithCounter
 	}{
 		Counters: counters,
+		Votes:    votes,
 	}
 	core.Render(tmpl, w, "counters-list", context)
 }
@@ -107,15 +116,19 @@ func HandleClickUpvote(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	}
 
 	if _, err := AddVote(tx, counterID, account.AccountID); err != nil {
-		if err != pg.ErrConflict {
+		if err == pg.ErrNotFound {
+			stdHTMLResp(w, http.StatusNotFound)
+		} else {
 			log.Printf("cannot add vote: %s", err)
-		}
-	} else {
-		if err := tx.Commit(); err != nil {
-			log.Printf("cannot commit transaction: %s", err)
 			stdHTMLResp(w, http.StatusInternalServerError)
-			return
 		}
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("cannot commit transaction: %s", err)
+		stdHTMLResp(w, http.StatusInternalServerError)
+		return
 	}
 
 	// cache expiration, because new couter happened

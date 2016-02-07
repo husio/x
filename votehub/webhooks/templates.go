@@ -13,21 +13,54 @@ var tmpl = template.Must(core.NewTemplate(`
 	{{template "header" .}}
 
 	<div class="row">
-		<div class="col-md-12">
-			<h1>Repositories</h1>
-			<form action="/webhooks/create" method="POST">
-				{{range .Repositories}}
-					<div>
-						<input name="repository-{{.Name}}" type="checkbox">
-						<a href="{{.URL}}">{{.FullName}}</a>
-						{{if .Description}}<small>{{.Description}}</small>{{end}}
-					</div>
-				{{end}}
+		<div class="col-md-8">
+			{{if .Repositories}}
+				<h2>Create webhooks for repositories</h2>
+				<p>You can manage webhooks of {{.Repositories | len}} repositories.</p>
 
-				<button type="submit" class="btn btn-primary">Create webhooks</button>
-			</form>
+				<form action="/webhooks/create" method="POST">
+					<table class="table table-sm">
+					{{range .Repositories}}
+						<tr>
+							<td><input name="repository-{{.Name}}" type="checkbox"></td>
+							<td><a href="https://github.com/{{.FullName}}/settings/hooks">{{.FullName}}</a></td>
+							<td>{{.Description}}</td>
+						</tr>
+					{{end}}
+					</table>
+
+					<span name="toggle-selected" class="btn btn-info-outline">toggle</span>
+					<button type="submit" class="btn btn-primary" disabled>create webhooks</button>
+				</form>
+			{{else}}
+				<div class="alert alert-warning">You are not admin of any repository.</div>
+			{{end}}
+		</div>
+		<div class="col-md-4">
+				<h2>FAQ</h2>
+				<p>Q: <strong>Why do I have to register a webhook?</strong></p>
+				<p>A: Bla bla bla<p>
+				<hr>
+				<p>Q: <strong>Bla bla bla</strong></p>
+				<p>A: Bla bla bla<p>
+				<hr>
+				<p>Q: <strong>My repository has webhook registered. Why checkbox is not selected?</strong></p>
+				<p>A: Webhook detection is not yet implemented. Registering the same webhook more than once is secure.<p>
 		</div>
 	</div>
+
+	<script>
+$(function () {
+	$('[name="toggle-selected"]').click(function () {
+		$(':checkbox[name^=repository]').each(function () {
+			$(this).prop('checked', !$(this).prop('checked'))
+		})
+	});
+	$(':checkbox[name^=repository]').change(function () {
+		$('[type=submit]').prop('disabled', $(':checkbox:checked').length === 0);
+	});
+});
+	</script>
 
 	{{template "footer" .}}
 {{end}}

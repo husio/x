@@ -22,7 +22,6 @@ func TestRouter(t *testing.T) {
 			for _, name := range names {
 				values = append(values, args.ByName(name))
 			}
-			result.handlerName = args.HandlerName()
 			result.id = id
 			result.values = values
 		}

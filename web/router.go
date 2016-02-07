@@ -142,14 +142,14 @@ func (rt *Router) ServeCtxHTTP(ctx context.Context, w http.ResponseWriter, r *ht
 		}
 		values := match[0]
 
-		ctx = context.WithValue(ctx, "router:args", &args{
-			handlerName: h.handlerName,
-			names:       h.names,
-			values:      values[1:],
-		})
+		ctx := WithArgs(ctx, h.names, values[1:])
 		h.fn(ctx, w, r)
 		return
 	}
+}
+
+func WithArgs(ctx context.Context, names, values []string) context.Context {
+	return context.WithValue(ctx, "router:args", &args{names, values})
 }
 
 func (rt *Router) Reverse(name string, args ...interface{}) (string, error) {
@@ -166,17 +166,12 @@ func (rt *Router) Reverse(name string, args ...interface{}) (string, error) {
 var ErrRouteNotFound = errors.New("route not found")
 
 type args struct {
-	handlerName string
-	names       []string
-	values      []string
+	names  []string
+	values []string
 }
 
 func (a *args) Len() int {
 	return len(a.values)
-}
-
-func (a *args) HandlerName() string {
-	return a.handlerName
 }
 
 func (a *args) ByName(name string) string {
@@ -203,11 +198,14 @@ type handler struct {
 }
 
 func Args(ctx context.Context) PathArgs {
-	return ctx.Value("router:args").(*args)
+	a := ctx.Value("router:args")
+	if a == nil {
+		panic("router args not present in the context")
+	}
+	return a.(*args)
 }
 
 type PathArgs interface {
-	HandlerName() string
 	ByName(string) string
 	ByIndex(int) string
 }

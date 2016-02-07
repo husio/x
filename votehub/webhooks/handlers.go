@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/github"
 	"github.com/husio/x/auth"
 	"github.com/husio/x/storage/pg"
 	"github.com/husio/x/votehub/core"
+	"github.com/husio/x/votehub/ghub"
 	"github.com/husio/x/votehub/votes"
 	"github.com/husio/x/web"
 	"golang.org/x/net/context"
@@ -35,12 +37,12 @@ func HandleListWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		&oauth2.Token{AccessToken: token},
 	)
 
-	client := github.NewClient(oauth2.NewClient(oauth2.NoContext, ts))
+	client := ghub.Client(ctx, oauth2.NewClient(oauth2.NoContext, ts))
 
-	opts := github.RepositoryListByUserOptions{
+	opts := github.RepositoryListOptions{
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
-	repositories, _, err := client.Repositories.ListByUser(account.Login, &opts)
+	repositories, err := client.ListRepositories(account.Login, &opts)
 	if err != nil {
 		panic(err)
 	}
@@ -88,15 +90,15 @@ func HandleCreateWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Re
 		&oauth2.Token{AccessToken: token},
 	)
 
-	client := github.NewClient(oauth2.NewClient(oauth2.NoContext, ts))
+	client := ghub.Client(ctx, oauth2.NewClient(oauth2.NoContext, ts))
 
 	for _, repo := range repositories {
-		_, _, err := client.Repositories.CreateHook(account.Login, repo, &github.Hook{
+		_, err := client.CreateHook(account.Login, repo, &github.Hook{
 			Name:   github.String("web"),
 			Active: github.Bool(true),
 			Events: []string{"issues"},
 			Config: map[string]interface{}{
-				"url":          "https://votehub.eu/" + web.Reverse(ctx, "webhooks-create"),
+				"url":          "https://votehub.eu" + web.Reverse(ctx, "webhooks-issues-callback"),
 				"secret":       "TODO-secret", // TODO
 				"content_type": "json",
 			},
@@ -109,20 +111,65 @@ func HandleCreateWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Re
 	http.Redirect(w, r, "/webhooks/create", http.StatusFound)
 }
 
-func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	if ev := r.Header.Get("X-Github-Event"); ev != "issues" {
+func HandleIssuesWebhookCallback(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	// TODO: check X-Hub-Signature
+
+	switch ev := r.Header.Get("X-Github-Event"); ev {
+	case "ping":
+		handleIssuesWebhookCallbackPing(ctx, w, r)
+	case "issues":
+		handleIssuesWebhookCallback(ctx, w, r)
+	default:
 		log.Printf("issues handler got %q event", ev)
 		web.StdJSONErr(w, http.StatusBadRequest)
+	}
+}
+
+func handleIssuesWebhookCallbackPing(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID      int       `json:"id"`
+		URL     string    `json:"url"`
+		Created time.Time `json:"created_at"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		web.JSONErr(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	hook := Webhook{
+		WebhookID:    input.ID,
+		Created:      input.Created,
+		RepoFullName: findRepoFullName(input.URL),
+	}
+	if hook, err := CreateWebhook(pg.DB(ctx), hook); err != nil {
+		web.JSONErr(w, err.Error(), http.StatusInternalServerError)
+	} else {
+		web.JSONResp(w, hook, http.StatusOK)
+	}
+}
+
+// findRepoFullName return repo full name (owner/name) for given url string.
+// Example:
+//
+// https://api.github.com/repos/octocat/Hello-World/hooks/1 => octocat/Hello-World
+func findRepoFullName(url string) string {
+	match := repoFullNameRx.FindStringSubmatch(url)
+	if len(match) == 2 {
+		return match[1]
+	}
+	return ""
+}
+
+var repoFullNameRx = regexp.MustCompile(`github.com/repos/(.*?)/hooks`)
+
+func handleIssuesWebhookCallback(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Action string `json:"action"`
 		Issue  struct {
-			URL    string `json:"url"`
-			Number int    `json:"number"`
-			Title  string `json:"title"`
-			Body   string `json:"body"`
+			HtmlUrl string `json:"html_url"`
+			Number  int    `json:"number"`
+			Title   string `json:"title"`
+			Body    string `json:"body"`
 		} `json:"issue"`
 		Repository struct {
 			ID       int    `json:"id"`
@@ -134,8 +181,6 @@ func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *htt
 			} `json:"owner"`
 		} `json:"repository"`
 	}
-
-	// TODO: check X-Hub-Signature
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		log.Printf("cannot decode webhook body: %s", err)
@@ -160,7 +205,7 @@ func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *htt
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
-	client := github.NewClient(oauth2.NewClient(oauth2.NoContext, ts))
+	client := ghub.Client(ctx, oauth2.NewClient(oauth2.NoContext, ts))
 
 	var (
 		replaced int
@@ -176,19 +221,19 @@ func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *htt
 			title = title[:200]
 		}
 		desc := fmt.Sprintf("Issue %d: %s", input.Issue.Number, title)
-		if len(tag) > 10 && tag[9:len(tag)-1] != "" { // [votehub:(DESC)]
-			extra := strings.TrimSpace(tag[9 : len(tag)-1])
+		if len(tag) > 12 && tag[10:len(tag)-2] != "" { // {{votehub (DESC)}}
+			extra := strings.TrimSpace(tag[10 : len(tag)-2])
 			desc = fmt.Sprintf("%s (%s)", desc, extra)
 		}
 
 		counter, err := votes.CreateCounter(tx, votes.Counter{
 			Description: desc,
 			OwnerID:     input.Repository.Owner.ID,
-			URL:         input.Issue.URL,
+			URL:         input.Issue.HtmlUrl,
 		})
 		if err != nil {
 			cerr = err
-			log.Printf("cannot create counter for %q issue: %s", input.Issue.URL, err)
+			log.Printf("cannot create counter for %q issue: %s", input.Issue.HtmlUrl, err)
 			return ""
 		}
 
@@ -203,7 +248,7 @@ func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *htt
 		return
 	}
 
-	_, _, err = client.Issues.Edit(
+	_, err = client.EditIssue(
 		input.Repository.Owner.Login,
 		input.Repository.Name,
 		input.Issue.Number,
@@ -223,4 +268,4 @@ func HandleIssuesWebhookEvent(ctx context.Context, w http.ResponseWriter, r *htt
 	web.StdJSONResp(w, http.StatusOK)
 }
 
-var findTagsRx = regexp.MustCompile(`\[votehub\]|\[votehub\s+[^\]]{0,100}\]`)
+var findTagsRx = regexp.MustCompile(`\{\{votehub ?[^\}]{0,100}\}\}`)

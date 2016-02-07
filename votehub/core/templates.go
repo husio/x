@@ -35,6 +35,10 @@ const base = `
     <meta name="author" content="">
     <title>VoteHub</title>
 	<link href="//maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.2/css/bootstrap.min.css" rel="stylesheet">
+	<script src="//code.jquery.com/jquery-2.2.0.min.js"></script>
+	<style>
+		body { margin: 30px 0; }
+	</style>
   </head>
   <body>
     <div class="container">

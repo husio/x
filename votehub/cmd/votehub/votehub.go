@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/husio/x/auth"
 	"github.com/husio/x/envconf"
 	"github.com/husio/x/storage/pg"
 	"github.com/husio/x/votehub/cache"
+	"github.com/husio/x/votehub/core"
+	"github.com/husio/x/votehub/ghub"
 	"github.com/husio/x/votehub/votes"
 	"github.com/husio/x/votehub/webhooks"
 	"github.com/husio/x/web"
@@ -28,7 +31,7 @@ var router = web.NewRouter("", web.Routes{
 
 	web.GET(`/webhooks/create`, "webhooks-listing", webhooks.HandleListWebhooks),
 	web.POST(`/webhooks/create`, "webhooks-create", webhooks.HandleCreateWebhooks),
-	web.POST(`/webhooks/issues`, "webhooks-issues-callback", webhooks.HandleIssuesWebhookEvent),
+	web.POST(`/webhooks/callbacks/issues`, "webhooks-issues-callback", webhooks.HandleIssuesWebhookCallback),
 
 	web.GET(`/v/{counter-id:\d+}/upvote`, "counters-upvote", votes.HandleClickUpvote),
 	web.GET(`/v/{counter-id:\d+}/banner.svg`, "counters-banner-svg", votes.HandleRenderSVGBanner),
@@ -45,24 +48,31 @@ func main() {
 		Scopes:       []string{"public_repo", "write:repo_hook"},
 		Endpoint:     oauth2gh.Endpoint,
 	}
-	dbname := conf.ReqString("DB_NAME", "Postgres database name")
-	dbuser := conf.ReqString("DB_USER", "Postgres database user")
-	dbpass := conf.ReqString("DB_PASS", "Postgres database password")
+	dbconf := conf.ReqString("DB", "Postgres database connection")
 	conf.Finish()
 
 	ctx := context.Background()
 	ctx = auth.WithGithubOAuth(ctx, oauth)
 	ctx = cache.WithIntCache(ctx)
 	ctx = web.WithRouter(ctx, router)
+	ctx = ghub.WithClient(ctx, ghub.StandardClient)
 
-	db, err := sql.Open("postgres",
-		fmt.Sprintf("dbname='%s' user='%s' password='%s' sslmode=disable", dbname, dbuser, dbpass))
+	db, err := sql.Open("postgres", dbconf)
 	if err != nil {
 		log.Fatalf("cannot connect to PostgreSQL: %s", err)
 	}
 	if err := db.Ping(); err != nil {
 		log.Fatalf("cannot ping database: %s", err)
 	}
+
+	if err := core.LoadSchema(db); err != nil {
+		log.Printf("cannot load schema: %s", err)
+		if serr, ok := err.(*core.SchemaError); ok {
+			log.Printf("query: %s", serr.Query)
+		}
+		os.Exit(1)
+	}
+
 	ctx = pg.WithDB(ctx, db)
 
 	app := &application{
