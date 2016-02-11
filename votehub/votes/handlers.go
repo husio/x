@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/husio/x/auth"
+	"github.com/husio/x/cache"
 	"github.com/husio/x/storage/pg"
-	"github.com/husio/x/votehub/cache"
 	"github.com/husio/x/votehub/core"
 	"github.com/husio/x/web"
 
@@ -45,14 +45,16 @@ func HandleListCounters(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		Counters: counters,
 		Votes:    votes,
 	}
-	core.Render(tmpl, w, "counters-list", context)
+	core.Render(w, "counters_list.html", context)
 }
 
 func HandleRenderSVGBanner(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	counterID := stoi(web.Args(ctx).ByIndex(0))
-	cch := cache.IntCache(ctx)
-	value, ok := cch.Get(fmt.Sprintf("counters:%d", counterID))
-	if !ok {
+	key := fmt.Sprintf("counters:%d", counterID)
+	cch := cache.Get(ctx)
+
+	var value int64
+	if err := cch.Get(key, &value); err != nil {
 		counter, err := CounterByID(pg.DB(ctx), counterID)
 		if err != nil {
 			if err == pg.ErrNotFound {
@@ -64,7 +66,7 @@ func HandleRenderSVGBanner(ctx context.Context, w http.ResponseWriter, r *http.R
 			return
 		}
 		value = int64(counter.Value)
-		cch.Put(fmt.Sprintf("counters:%d", counterID), value)
+		cch.Put(key, value)
 	}
 
 	w.Header().Set("Content-Type", "image/svg+xml")
@@ -111,7 +113,7 @@ func HandleClickUpvote(ctx context.Context, w http.ResponseWriter, r *http.Reque
 			Counter: counter,
 		}
 		w.WriteHeader(http.StatusUnauthorized)
-		core.Render(tmpl, w, "click-upvote-login", context)
+		core.Render(w, "click_upvote_login.html", context)
 		return
 	}
 
@@ -132,7 +134,7 @@ func HandleClickUpvote(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	}
 
 	// cache expiration, because new couter happened
-	cache.IntCache(ctx).Del(fmt.Sprintf("counters:%d", counterID))
+	cache.Get(ctx).Del(fmt.Sprintf("counters:%d", counterID))
 
 	if ref := r.Referer(); ref != "" && !strings.HasSuffix(r.URL.Path, "banner.svg") {
 		// TODO render html page with explanation instead

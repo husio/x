@@ -1,53 +1,95 @@
 package core
 
 import (
+	"fmt"
 	"html/template"
 	"io"
 	"log"
+	"time"
 )
 
-func NewTemplate(rawTemplate string) (*template.Template, error) {
-	t, err := template.New("").Parse(base)
-	if err != nil {
-		return nil, err
-	}
-	return t.Parse(rawTemplate)
-}
+var (
+	// XXX race conditions when in debug mode
+	tmpl      *template.Template
+	tmplGlob  string
+	tmplCache bool
+)
 
-func Render(t *template.Template, w io.Writer, name string, context interface{}) error {
-	err := t.ExecuteTemplate(w, name, context)
-	if err != nil {
+func Render(w io.Writer, name string, context interface{}) {
+	if tmpl == nil {
+		log.Printf("cannot render %q: templates not loaded", name)
+		return
+	}
+	if err := tmpl.ExecuteTemplate(w, name, context); err != nil {
 		log.Printf("cannot render %q: %s", name, err)
 	}
-	return err
+
+	if !tmplCache {
+		LoadTemplates(tmplGlob, tmplCache)
+	}
 }
 
-const base = `
+// LoadTemplates parse and load template files matching given glob. Function is
+// not thread safe and must be called only once during application
+// initialization phase.
+func LoadTemplates(glob string, cache bool) error {
+	tmplGlob = glob
+	tmplCache = cache
 
-{{define "header"}}
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <meta name="description" content="">
-    <meta name="author" content="">
-    <title>VoteHub</title>
-	<link href="//maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.2/css/bootstrap.min.css" rel="stylesheet">
-	<script src="//code.jquery.com/jquery-2.2.0.min.js"></script>
-	<style>
-		body { margin: 30px 0; }
-	</style>
-  </head>
-  <body>
-    <div class="container">
-{{end}}
+	t, err := template.New("").Funcs(funcs).ParseGlob(glob)
+	if err != nil {
+		return err
+	}
+	tmpl = t
 
+	return nil
+}
 
-{{define "footer"}}
-    </div>
-  </body>
-</html>
-{{end}}
-`
+var funcs = template.FuncMap{
+	"timesince": timesince,
+}
+
+func timesince(t time.Time) string {
+	if t.IsZero() {
+		return "unknown"
+	}
+	delta := time.Now().Sub(t)
+	switch {
+	case delta >= year:
+		if n := int(delta / year); n > 1 {
+			return fmt.Sprintf("%d years ago", n)
+		}
+		return "1 year ago"
+	case delta >= month:
+		if n := int(delta / month); n > 1 {
+			return fmt.Sprintf("%d months ago", n)
+		}
+		return "1 month ago"
+	case delta >= 24*time.Hour:
+		if n := int(delta / day); n > 1 {
+			return fmt.Sprintf("%d days ago", n)
+		}
+		return "1 day ago"
+	case delta >= time.Hour:
+		if n := int(delta / time.Hour); n > 1 {
+			return fmt.Sprintf("%d hours ago", n)
+		}
+		return "1 hour ago"
+	case delta >= time.Minute:
+		if n := int(delta / time.Minute); n > 1 {
+			return fmt.Sprintf("%d minutes ago", n)
+		}
+		return "1 minute ago"
+	case delta > 3*time.Second:
+		return fmt.Sprintf("%d seconds ago", int(delta/time.Second))
+	default:
+		return "now"
+	}
+}
+
+const (
+	// more or less
+	year  = 356 * 24 * time.Hour
+	month = 30 * 24 * time.Hour
+	day   = 24 * time.Hour
+)

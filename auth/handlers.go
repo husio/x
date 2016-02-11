@@ -13,43 +13,105 @@ import (
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 
+	"github.com/husio/x/cache"
 	"github.com/husio/x/storage/pg"
 	"github.com/husio/x/web"
 )
 
-const state = "github-oauth" // TODO
+const stateCookie = "oauthState"
 
-func WithGithubOAuth(ctx context.Context, c *oauth2.Config) context.Context {
-	return context.WithValue(ctx, "auth:github", c)
+func WithOAuth(ctx context.Context, conf map[string]*oauth2.Config) context.Context {
+	return context.WithValue(ctx, "auth:oauth", conf)
 }
 
-func githubOAuth(ctx context.Context) *oauth2.Config {
-	return ctx.Value("auth:github").(*oauth2.Config)
+func githubOAuth(ctx context.Context, name string) (*oauth2.Config, bool) {
+	val := ctx.Value("auth:oauth")
+	if val == nil {
+		panic("oauth configuration not present in context")
+	}
+	conf, ok := val.(map[string]*oauth2.Config)
+	return conf[name], ok
 }
 
-func HandleLoginGithub(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	url := githubOAuth(ctx).AuthCodeURL(state, oauth2.AccessTypeOnline)
-	if next := r.URL.Query().Get("next"); next != "" {
+func LoginHandler(provider string) web.HandlerFunc {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		conf, ok := githubOAuth(ctx, provider)
+		if !ok {
+			log.Printf("missing oauth provider configuration: %s", provider)
+			const code = http.StatusInternalServerError
+			http.Error(w, http.StatusText(code), code)
+			return
+		}
+
+		state := randStr(18)
+		url := conf.AuthCodeURL(state, oauth2.AccessTypeOnline)
 		http.SetCookie(w, &http.Cookie{
-			Name:    nextCookieName,
+			Name:    stateCookie,
 			Path:    "/",
-			Value:   next,
+			Value:   state,
 			Expires: time.Now().Add(time.Minute * 15),
 		})
+
+		nextURL := r.URL.Query().Get("next")
+		if nextURL == "" {
+			nextURL = "/"
+		}
+		err := cache.Get(ctx).Put("auth:"+state, &authData{
+			Provider: provider,
+			Scopes:   conf.Scopes,
+			NextURL:  nextURL,
+		})
+		if err != nil {
+			log.Printf("cannot store in cache: %s", err)
+			web.StdJSONErr(w, http.StatusInternalServerError)
+			return
+		}
+		web.JSONRedirect(w, url, http.StatusTemporaryRedirect)
 	}
-	web.JSONRedirect(w, url, http.StatusTemporaryRedirect)
 }
 
-const nextCookieName = "loginNext"
+type authData struct {
+	Provider string
+	Scopes   []string
+	NextURL  string
+}
 
-func HandleLoginGithubCallback(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+func HandleLoginCallback(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	var state string
+	if c, err := r.Cookie(stateCookie); err != nil || c.Value == "" {
+		log.Printf("invalid oauth state: expected %q, got %q", state, r.FormValue("state"))
+		web.JSONRedirect(w, "/", http.StatusTemporaryRedirect)
+		return
+	} else {
+		state = c.Value
+	}
+
 	if r.FormValue("state") != state {
 		log.Printf("invalid oauth state: expected %q, got %q", state, r.FormValue("state"))
 		web.JSONRedirect(w, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
-	conf := githubOAuth(ctx)
+	var data authData
+	switch err := cache.Get(ctx).Get("auth:"+state, &data); err {
+	case nil:
+		// all good
+	case cache.ErrNotFound:
+		web.JSONRedirect(w, "/", http.StatusTemporaryRedirect)
+		return
+	default:
+		log.Printf("cannot get auth data from cache: %s", err)
+		web.JSONRedirect(w, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	conf, ok := githubOAuth(ctx, data.Provider)
+	if !ok {
+		log.Printf("missing oauth provider configuration: %#v", data)
+		const code = http.StatusInternalServerError
+		http.Error(w, http.StatusText(code), code)
+		return
+	}
 
 	token, err := conf.Exchange(oauth2.NoContext, r.FormValue("code"))
 	if err != nil {
@@ -74,15 +136,16 @@ func HandleLoginGithubCallback(ctx context.Context, w http.ResponseWriter, r *ht
 	}
 	defer tx.Rollback()
 
-	acc, err := AccountByLogin(tx, *user.Login)
+	provider := strings.SplitN(data.Provider, ":", 2)[0]
+	acc, err := AccountByLogin(tx, *user.Login, provider)
 	if err != nil {
 		if err != pg.ErrNotFound {
-			log.Printf("cannot get account %s: %s", user.Name, err)
+			log.Printf("cannot get account %s: %s", *user.Login, err)
 			http.Error(w, "cannot authenticate", http.StatusInternalServerError)
 			return
 		}
 
-		acc, err = CreateAccount(tx, *user.ID, *user.Login)
+		acc, err = CreateAccount(tx, *user.ID, *user.Login, provider)
 		if err != nil {
 			log.Printf("cannot create account for %v: %s", user, err)
 			http.Error(w, "cannot create account", http.StatusInternalServerError)
@@ -90,7 +153,7 @@ func HandleLoginGithubCallback(ctx context.Context, w http.ResponseWriter, r *ht
 		}
 	}
 
-	if err := authenticate(tx, w, acc.AccountID, token.AccessToken); err != nil {
+	if err := authenticate(tx, w, acc.AccountID, token.AccessToken, data.Scopes); err != nil {
 		log.Printf("cannot authenticate %#v: %s", acc, err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -102,21 +165,17 @@ func HandleLoginGithubCallback(ctx context.Context, w http.ResponseWriter, r *ht
 		return
 	}
 
-	next := "/"
-	if c, err := r.Cookie(nextCookieName); err == nil {
-		next = c.Value
-		http.SetCookie(w, &http.Cookie{
-			Name:    nextCookieName,
-			Path:    "/",
-			Value:   "",
-			Expires: time.Now().Add(-24 * time.Hour),
-		})
-	}
-	web.JSONRedirect(w, next, http.StatusTemporaryRedirect)
+	web.JSONRedirect(w, data.NextURL, http.StatusTemporaryRedirect)
 }
 
-func authenticate(e pg.Execer, w http.ResponseWriter, account int, token string) error {
-	key, err := CreateSession(e, account, randStr(48), token)
+func authenticate(
+	g pg.Getter,
+	w http.ResponseWriter,
+	account int,
+	token string,
+	scopes []string,
+) error {
+	key, err := CreateSession(g, account, randStr(48), token, scopes)
 	if err != nil {
 		return err
 	}

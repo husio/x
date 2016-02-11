@@ -48,7 +48,10 @@ func DelVote(e pg.Execer, counterID, accountID int) error {
 func VotesByOwner(s pg.Selector, owner int, limit, offset int) ([]*VoteWithCounter, error) {
 	var res []*VoteWithCounter
 	err := s.Select(&res, `
-		SELECT v.*, c.* FROM votes v
+		SELECT
+			v.*,
+			c.value, c.description, c.url
+		FROM votes v
 			INNER JOIN counters c ON v.counter_id = c.counter_id
 		WHERE v.account_id = $1
 		ORDER BY v.created DESC
@@ -59,7 +62,9 @@ func VotesByOwner(s pg.Selector, owner int, limit, offset int) ([]*VoteWithCount
 
 type VoteWithCounter struct {
 	Vote
-	Counter
+	CounterValue       int    `db:"value"`
+	CounterDescription string `db:"description"`
+	CounterURL         string `db:"url"`
 }
 
 func CreateCounter(g pg.Getter, c Counter) (*Counter, error) {

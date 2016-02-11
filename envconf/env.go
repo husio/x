@@ -39,6 +39,17 @@ func (c *Conf) String(name, def, desc string) (string, bool) {
 	return v, true
 }
 
+func (c *Conf) Bool(name string, def bool, desc string) (bool, bool) {
+	v, ok := c.env[name]
+	if !ok {
+		return def, false
+	}
+	if b, err := strconv.ParseBool(v); err == nil {
+		return b, true
+	}
+	return def, false
+}
+
 func (c *Conf) ReqString(name, desc string) string {
 	v, ok := c.env[name]
 	if !ok {

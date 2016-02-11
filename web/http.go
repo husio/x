@@ -77,12 +77,6 @@ func StdHTMLResp(w http.ResponseWriter, code int) {
 	render(w, "std-html-response", resp)
 }
 
-func StdHandler(code int) HandlerFunc {
-	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-		StdHTMLResp(w, code)
-	}
-}
-
 func HTMLErr(w http.ResponseWriter, errText string, code int) {
 	content := struct {
 		Code int
@@ -173,4 +167,19 @@ func CheckLastModified(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	}
 	w.Header().Set("Last-Modified", modtime.UTC().Format(http.TimeFormat))
 	return false
+}
+
+func RedirectHandler(path string, code int) HandlerFunc {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, path, code)
+	}
+}
+
+func StdHandler(code int) HandlerFunc {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(code)
+		fmt.Fprintln(w, http.StatusText(code))
+	}
 }

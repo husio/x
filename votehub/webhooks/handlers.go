@@ -26,6 +26,12 @@ func HandleListWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+	if account.Scopes == "" {
+		next := web.Reverse(ctx, "login-repo-owner")
+		url := fmt.Sprintf("%s?next=%s", next, r.URL.Path)
+		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		return
+	}
 
 	token, err := auth.AccessToken(db, account.AccountID)
 	if err != nil {
@@ -44,21 +50,58 @@ func HandleListWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	}
 	repositories, err := client.ListRepositories(account.Login, &opts)
 	if err != nil {
-		panic(err)
+		log.Printf("cannot list repositories: %s", err)
+		stdHTMLResp(w, http.StatusInternalServerError)
+		return
+	}
+
+	var names []string
+	for _, r := range repositories {
+		names = append(names, *r.FullName)
+	}
+	hooks, err := WebhooksByRepositoryName(db, names)
+	if err != nil {
+		log.Printf("cannot list webhooks %v: %s", names, err)
+		stdHTMLResp(w, http.StatusInternalServerError)
+		return
+	}
+
+	hidx := make(map[string]*Webhook)
+	for _, h := range hooks {
+		hidx[h.RepositoryFullName] = h
+	}
+
+	type RepoWithHook struct {
+		*github.Repository
+		Hook *Webhook
+	}
+	var withhooks []*RepoWithHook
+	for i := range repositories {
+		r := repositories[i]
+		withhooks = append(withhooks, &RepoWithHook{
+			Repository: &r,
+			Hook:       hidx[*r.FullName],
+		})
 	}
 
 	context := struct {
-		Repositories []github.Repository
+		Repositories []*RepoWithHook
 	}{
-		Repositories: repositories,
+		Repositories: withhooks,
 	}
-	core.Render(tmpl, w, "webhook-list", context)
+	core.Render(w, "webhook_list.html", context)
 }
 
 func HandleCreateWebhooks(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	db := pg.DB(ctx)
 	account, ok := auth.AuthRequired(db, w, r)
 	if !ok {
+		return
+	}
+	if account.Scopes == "" {
+		next := web.Reverse(ctx, "login-repo-owner")
+		url := fmt.Sprintf("%s?next=%s", next, r.URL.Path)
+		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -127,9 +170,12 @@ func HandleIssuesWebhookCallback(ctx context.Context, w http.ResponseWriter, r *
 
 func handleIssuesWebhookCallbackPing(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		ID      int       `json:"id"`
-		URL     string    `json:"url"`
-		Created time.Time `json:"created_at"`
+		HookID     int       `json:"hook_id"`
+		Created    time.Time `json:"created_at"`
+		Repository struct {
+			ID       int    `json:"id"`
+			FullName string `json:"full_name"`
+		} `json:"repository"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		web.JSONErr(w, err.Error(), http.StatusBadRequest)
@@ -137,10 +183,12 @@ func handleIssuesWebhookCallbackPing(ctx context.Context, w http.ResponseWriter,
 	}
 
 	hook := Webhook{
-		WebhookID:    input.ID,
-		Created:      input.Created,
-		RepoFullName: findRepoFullName(input.URL),
+		WebhookID:          input.HookID,
+		Created:            input.Created,
+		RepositoryID:       input.Repository.ID,
+		RepositoryFullName: input.Repository.FullName,
 	}
+
 	if hook, err := CreateWebhook(pg.DB(ctx), hook); err != nil {
 		web.JSONErr(w, err.Error(), http.StatusInternalServerError)
 	} else {

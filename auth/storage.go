@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/husio/x/storage/pg"
@@ -10,10 +11,16 @@ import (
 type Account struct {
 	AccountID int `db:"account_id"`
 	Login     string
+	Provider  string
 	Created   time.Time
 }
 
-func Authenticated(g pg.Getter, r *http.Request) (*Account, bool) {
+type AccountWithScopes struct {
+	*Account
+	Scopes string
+}
+
+func Authenticated(g pg.Getter, r *http.Request) (*AccountWithScopes, bool) {
 	key := SessionKey(r)
 	if key == "" {
 		return nil, false
@@ -46,43 +53,60 @@ func AccountByID(g pg.Getter, accountID int) (*Account, error) {
 	`, accountID)
 	return &a, pg.CastErr(err)
 }
-func AccountByLogin(g pg.Getter, login string) (*Account, error) {
+
+func AccountByLogin(g pg.Getter, login, provider string) (*Account, error) {
 	var a Account
 	err := g.Get(&a, `
-		SELECT * FROM accounts WHERE login = $1
-	`, login)
+		SELECT * FROM accounts WHERE login = $1 AND provider = $2
+	`, login, provider)
 	return &a, pg.CastErr(err)
 }
 
-func CreateAccount(e pg.Execer, githubID int, login string) (*Account, error) {
+func CreateAccount(e pg.Execer, id int, login, provider string) (*Account, error) {
 	now := time.Now()
 	_, err := e.Exec(`
-		INSERT INTO accounts (account_id, login, created)
-		VALUES ($1, $2, $3)
-	`, githubID, login, now)
+		INSERT INTO accounts (account_id, login, created, provider)
+		VALUES ($1, $2, $3, $4)
+	`, id, login, now, provider)
 	if err != nil {
 		return nil, err
 	}
 	a := Account{
-		AccountID: githubID,
+		AccountID: id,
 		Login:     login,
 		Created:   now,
+		Provider:  provider,
 	}
 	return &a, nil
 }
 
-func CreateSession(e pg.Execer, account int, key, accessToken string) (string, error) {
-	_, err := e.Exec(`
-		INSERT INTO sessions (key, account, created, access_token)
-		VALUES ($1, $2, $3, $4)
-	`, key, account, time.Now(), accessToken)
-	return key, pg.CastErr(err)
+func CreateSession(
+	g pg.Getter,
+	account int,
+	key string,
+	accessToken string,
+	scopes []string,
+) (string, error) {
+	var ok bool
+	err := g.Get(&ok, `
+		INSERT INTO sessions (key, account, created, access_token, provider, scopes)
+			SELECT $1, $2, $3, $4, a.provider, $5
+			FROM accounts a WHERE a.account_id = $2 LIMIT 1
+		RETURNING true
+	`, key, account, time.Now(), accessToken, strings.Join(scopes, " "))
+	if err != nil {
+		return "", pg.CastErr(err)
+	}
+	if !ok {
+		return "", pg.ErrNotFound
+	}
+	return key, nil
 }
 
-func SessionAccount(g pg.Getter, key string) (*Account, error) {
-	var a Account
+func SessionAccount(g pg.Getter, key string) (*AccountWithScopes, error) {
+	var a AccountWithScopes
 	err := g.Get(&a, `
-		SELECT a.account_id, a.login, a.created
+		SELECT a.account_id, a.login, a.created, s.scopes
 		FROM accounts a INNER JOIN sessions s ON s.account = a.account_id
 		WHERE s.key = $1
 	`, key)
