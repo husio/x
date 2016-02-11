@@ -73,7 +73,7 @@ func main() {
 	ctx = auth.WithOAuth(ctx, oauthConf)
 	ctx = ghub.WithClient(ctx, ghub.StandardClient)
 	ctx = web.WithRouter(ctx, router)
-	ctx = cache.WithLocalCache(ctx)
+	ctx = cache.WithLocalCache(ctx, 1000)
 
 	db, err := sql.Open("postgres", dbconf)
 	if err != nil {

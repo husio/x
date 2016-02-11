@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"container/list"
 	"encoding/json"
 	"sync"
 
@@ -8,25 +9,43 @@ import (
 )
 
 type localCache struct {
-	mu  sync.Mutex
-	mem map[string][]byte
+	mu      sync.Mutex
+	maxsize int
+	idx     map[string]*item
+	order   *list.List
 }
 
-func WithLocalCache(ctx context.Context) context.Context {
-	c := &localCache{
-		mem: make(map[string][]byte),
-	}
+type item struct {
+	key string
+	val []byte
+	el  *list.Element
+}
+
+func WithLocalCache(ctx context.Context, maxsize int) context.Context {
+	c := newLocalCache(maxsize)
 	return context.WithValue(ctx, contextKey, c)
+}
+
+func newLocalCache(maxsize int) *localCache {
+	return &localCache{
+		idx:     make(map[string]*item, maxsize*2),
+		maxsize: maxsize,
+		order:   list.New(),
+	}
 }
 
 func (c *localCache) Get(key string, dest interface{}) error {
 	c.mu.Lock()
-	raw, ok := c.mem[key]
+	it, ok := c.idx[key]
+	if ok {
+		it.el = c.order.PushFront(it.el)
+	}
 	c.mu.Unlock()
+
 	if !ok {
 		return ErrNotFound
 	}
-	return json.Unmarshal(raw, dest)
+	return json.Unmarshal(it.val, dest)
 }
 
 func (c *localCache) Put(key string, src interface{}) error {
@@ -34,15 +53,25 @@ func (c *localCache) Put(key string, src interface{}) error {
 	if err != nil {
 		return nil
 	}
+	it := &item{key: key, val: raw}
 	c.mu.Lock()
-	c.mem[key] = raw
+	c.idx[it.key] = it
+	it.el = c.order.PushFront(it)
+	for len(c.idx) > c.maxsize {
+		last := c.order.Back().Value.(*item)
+		c.order.Remove(last.el)
+		delete(c.idx, last.key)
+	}
 	c.mu.Unlock()
 	return nil
 }
 
 func (c *localCache) Del(key string) error {
 	c.mu.Lock()
-	delete(c.mem, key)
+	if it, ok := c.idx[key]; ok {
+		delete(c.idx, key)
+		c.order.Remove(it.el)
+	}
 	c.mu.Unlock()
 	return nil
 }
