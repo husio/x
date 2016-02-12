@@ -38,7 +38,7 @@ func (c *localCache) Get(key string, dest interface{}) error {
 	c.mu.Lock()
 	it, ok := c.idx[key]
 	if ok {
-		it.el = c.order.PushFront(it.el)
+		c.order.MoveToFront(it.el)
 	}
 	c.mu.Unlock()
 
