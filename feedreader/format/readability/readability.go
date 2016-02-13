@@ -1,4 +1,0 @@
-package readability
-
-func Fetch() {
-}

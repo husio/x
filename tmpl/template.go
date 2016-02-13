@@ -1,4 +1,4 @@
-package core
+package tmpl
 
 import (
 	"fmt"
@@ -46,10 +46,10 @@ func LoadTemplates(glob string, cache bool) error {
 }
 
 var funcs = template.FuncMap{
-	"timesince": timesince,
+	"timesince": Timesince,
 }
 
-func timesince(t time.Time) string {
+func Timesince(t time.Time) string {
 	if t.IsZero() {
 		return "unknown"
 	}
