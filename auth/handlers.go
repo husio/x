@@ -24,7 +24,7 @@ func WithOAuth(ctx context.Context, conf map[string]*oauth2.Config) context.Cont
 	return context.WithValue(ctx, "auth:oauth", conf)
 }
 
-func githubOAuth(ctx context.Context, name string) (*oauth2.Config, bool) {
+func oauth(ctx context.Context, name string) (*oauth2.Config, bool) {
 	val := ctx.Value("auth:oauth")
 	if val == nil {
 		panic("oauth configuration not present in context")
@@ -35,7 +35,7 @@ func githubOAuth(ctx context.Context, name string) (*oauth2.Config, bool) {
 
 func LoginHandler(provider string) web.HandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-		conf, ok := githubOAuth(ctx, provider)
+		conf, ok := oauth(ctx, provider)
 		if !ok {
 			log.Printf("missing oauth provider configuration: %s", provider)
 			const code = http.StatusInternalServerError
@@ -105,7 +105,7 @@ func HandleLoginCallback(ctx context.Context, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	conf, ok := githubOAuth(ctx, data.Provider)
+	conf, ok := oauth(ctx, data.Provider)
 	if !ok {
 		log.Printf("missing oauth provider configuration: %#v", data)
 		const code = http.StatusInternalServerError
