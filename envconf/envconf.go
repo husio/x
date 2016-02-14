@@ -66,7 +66,11 @@ func Load(dest interface{}, settings map[string]string) error {
 		case reflect.String:
 			f.SetString(value)
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			intValue, err := strconv.ParseInt(value, 0, f.Type().Bits())
+			var intValue int64
+			var err error
+			if value != "" {
+				intValue, err = strconv.ParseInt(value, 0, f.Type().Bits())
+			}
 			if err != nil {
 				errs = append(errs, &ParseError{
 					Field: tp.Field(i).Name,
@@ -79,7 +83,11 @@ func Load(dest interface{}, settings map[string]string) error {
 			}
 			f.SetInt(intValue)
 		case reflect.Bool:
-			boolValue, err := strconv.ParseBool(value)
+			var boolValue bool
+			var err error
+			if value != "" {
+				boolValue, err = strconv.ParseBool(value)
+			}
 			if err != nil {
 				errs = append(errs, &ParseError{
 					Field: tp.Field(i).Name,
@@ -92,7 +100,11 @@ func Load(dest interface{}, settings map[string]string) error {
 			}
 			f.SetBool(boolValue)
 		case reflect.Float32, reflect.Float64:
-			floatValue, err := strconv.ParseFloat(value, f.Type().Bits())
+			var floatValue float64
+			var err error
+			if value != "" {
+				floatValue, err = strconv.ParseFloat(value, f.Type().Bits())
+			}
 			if err != nil {
 				errs = append(errs, &ParseError{
 					Field: tp.Field(i).Name,
@@ -105,6 +117,9 @@ func Load(dest interface{}, settings map[string]string) error {
 			}
 			f.SetFloat(floatValue)
 		case reflect.Slice:
+			if value == "" {
+				continue
+			}
 			vals := splitList(value)
 
 			switch f.Type().Elem().Kind() {
@@ -176,6 +191,21 @@ func Load(dest interface{}, settings map[string]string) error {
 	return errs
 }
 
+func Must(err error) {
+	if err == nil {
+		return
+	}
+	if errs, ok := err.(ParseErrors); !ok {
+		fmt.Fprintf(os.Stderr, "cannot parse config: %s\n", err)
+	} else {
+		fmt.Fprintln(os.Stderr, "cannot parse config")
+		for _, err := range errs {
+			fmt.Fprintf(os.Stderr, "  %s: %s\n", err.Name, err.Err)
+		}
+	}
+	os.Exit(1)
+}
+
 var (
 	splitListMu sync.Mutex
 	splitList   = func(s string) []string {
@@ -224,7 +254,7 @@ func LoadEnv(dest interface{}) error {
 		if len(pair) != 2 {
 			continue
 		}
-		env[pair[0]] = env[pair[1]]
+		env[pair[0]] = pair[1]
 	}
 	return Load(dest, env)
 }

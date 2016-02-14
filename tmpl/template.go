@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"os"
 	"time"
 )
 
@@ -20,12 +21,11 @@ func Render(w io.Writer, name string, context interface{}) {
 		log.Printf("cannot render %q: templates not loaded", name)
 		return
 	}
-	if err := tmpl.ExecuteTemplate(w, name, context); err != nil {
-		log.Printf("cannot render %q: %s", name, err)
-	}
-
 	if !tmplCache {
 		LoadTemplates(tmplGlob, tmplCache)
+	}
+	if err := tmpl.ExecuteTemplate(w, name, context); err != nil {
+		log.Printf("cannot render %q: %s", name, err)
 	}
 }
 
@@ -43,6 +43,13 @@ func LoadTemplates(glob string, cache bool) error {
 	tmpl = t
 
 	return nil
+}
+
+func MustLoadTemplates(glob string, cache bool) {
+	if err := LoadTemplates(glob, cache); err != nil {
+		fmt.Fprintf(os.Stderr, "cannot load templates: %s\n", err)
+		os.Exit(1)
+	}
 }
 
 var funcs = template.FuncMap{

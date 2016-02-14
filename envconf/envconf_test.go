@@ -44,15 +44,17 @@ func TestLoadString(t *testing.T) {
 	var c struct {
 		First  string
 		Second string
+		Third  string
 	}
 	in := map[string]string{
 		"FIRST":  "foo",
 		"SECOND": "bar",
+		"THIRD":  "",
 	}
 	if err := Load(&c, in); err != nil {
 		t.Fatalf("cannot load configuration: %s", err)
 	}
-	if c.First != in["FIRST"] || c.Second != in["SECOND"] {
+	if c.First != in["FIRST"] || c.Second != in["SECOND"] || c.Third != in["THIRD"] {
 		t.Errorf("invalid conf: %+v", c)
 	}
 }
@@ -61,10 +63,12 @@ func TestLoadStringSlice(t *testing.T) {
 	var c struct {
 		First  []string
 		Second []string
+		Third  []string
 	}
 	in := map[string]string{
 		"FIRST":  "foo;baz",
 		"SECOND": "a;b;c",
+		"THIRD":  "",
 	}
 	if err := Load(&c, in); err != nil {
 		t.Fatalf("cannot load configuration: %s", err)
@@ -75,6 +79,9 @@ func TestLoadStringSlice(t *testing.T) {
 	if !reflect.DeepEqual(c.Second, []string{"a", "b", "c"}) {
 		t.Errorf("second: %v", c.Second)
 	}
+	if c.Third != nil {
+		t.Errorf("third: %v", c.Third)
+	}
 }
 
 func TestLoadInt(t *testing.T) {
@@ -84,6 +91,8 @@ func TestLoadInt(t *testing.T) {
 		Int16 int16
 		Int32 int32
 		Int64 int64
+
+		Empty int
 	}
 	in := map[string]string{
 		"INT":   "1",
@@ -91,12 +100,17 @@ func TestLoadInt(t *testing.T) {
 		"INT16": "3",
 		"INT32": "4",
 		"INT64": "5",
+
+		"EMPTY": "",
 	}
 	if err := Load(&c, in); err != nil {
 		t.Fatalf("cannot load configuration: %s", err)
 	}
 	if c.Int != 1 || c.Int8 != 2 || c.Int16 != 3 || c.Int32 != 4 || c.Int64 != 5 {
 		t.Errorf("invalid conf: %+v", c)
+	}
+	if c.Empty != 0 {
+		t.Errorf("invalid empty value: %d", c.Empty)
 	}
 }
 
@@ -107,6 +121,8 @@ func TestLoadIntSlice(t *testing.T) {
 		Int16 []int16
 		Int32 []int32
 		Int64 []int64
+
+		Empty []int64
 	}
 	in := map[string]string{
 		"INT":   "1;1",
@@ -114,6 +130,8 @@ func TestLoadIntSlice(t *testing.T) {
 		"INT16": "3;3",
 		"INT32": "4;4",
 		"INT64": "5;5",
+
+		"EMPTY": "",
 	}
 	if err := Load(&c, in); err != nil {
 		t.Fatalf("cannot load configuration: %s", err)
@@ -133,6 +151,9 @@ func TestLoadIntSlice(t *testing.T) {
 	if !reflect.DeepEqual(c.Int64, []int64{5, 5}) {
 		t.Errorf("unexpected Int64 value: %+v", c.Int64)
 	}
+	if c.Empty != nil {
+		t.Errorf("unexpected empty value: %+v", c.Empty)
+	}
 }
 
 func TestBool(t *testing.T) {
@@ -143,6 +164,7 @@ func TestBool(t *testing.T) {
 		D bool
 		E bool
 		F bool
+		X bool
 	}
 	in := map[string]string{
 		"A": "t",
@@ -151,6 +173,7 @@ func TestBool(t *testing.T) {
 		"D": "f",
 		"E": "false",
 		"F": "0",
+		"X": "",
 	}
 	if err := Load(&c, in); err != nil {
 		t.Fatalf("cannot load configuration: %s", err)
@@ -158,16 +181,21 @@ func TestBool(t *testing.T) {
 	if !c.A || !c.B || !c.C || c.D || c.E || c.F {
 		t.Errorf("invalid conf: %+v", c)
 	}
+	if c.X != false {
+		t.Errorf("invalid X value: %v", c.X)
+	}
 }
 
 func TestBoolSlice(t *testing.T) {
 	var c struct {
 		A []bool
 		B []bool
+		C []bool
 	}
 	in := map[string]string{
 		"A": "t;true;1",
 		"B": "f;false;0",
+		"C": "",
 	}
 	if err := Load(&c, in); err != nil {
 		t.Fatalf("cannot load configuration: %s", err)
@@ -178,21 +206,26 @@ func TestBoolSlice(t *testing.T) {
 	if !reflect.DeepEqual(c.B, []bool{false, false, false}) {
 		t.Errorf("invalid B value: %+v", c.B)
 	}
+	if c.C != nil {
+		t.Errorf("invalid C value: %+v", c.C)
+	}
 }
 
 func TestFloat(t *testing.T) {
 	var c struct {
 		A float32
 		B float64
+		C float64
 	}
 	in := map[string]string{
 		"A": "1.1",
 		"B": "2.2",
+		"C": "",
 	}
 	if err := Load(&c, in); err != nil {
 		t.Fatalf("cannot load configuration: %s", err)
 	}
-	if c.A != 1.1 || c.B != 2.2 {
+	if c.A != 1.1 || c.B != 2.2 || c.C != 0 {
 		t.Errorf("invalid conf: %+v", c)
 	}
 }
@@ -201,10 +234,12 @@ func TestFloatSlice(t *testing.T) {
 	var c struct {
 		A []float32
 		B []float64
+		C []float32
 	}
 	in := map[string]string{
 		"A": "1.1;1.2",
 		"B": "2.2;2.3",
+		"C": "",
 	}
 	if err := Load(&c, in); err != nil {
 		t.Fatalf("cannot load configuration: %s", err)
@@ -214,6 +249,9 @@ func TestFloatSlice(t *testing.T) {
 	}
 	if !reflect.DeepEqual(c.B, []float64{2.2, 2.3}) {
 		t.Errorf("invalid B value: %+v", c.B)
+	}
+	if c.C != nil {
+		t.Errorf("invalid C value: %+v", c.C)
 	}
 }
 

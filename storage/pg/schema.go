@@ -5,13 +5,25 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
-
-	"github.com/husio/x/storage/pg"
 )
 
 var SchemaSep = "---"
 
-func LoadSchema(e pg.Execer, path string) error {
+func MustLoadSchema(e Execer, path string) {
+	err := LoadSchema(e, path)
+	if err == nil {
+		return
+	}
+
+	if err, ok := err.(*SchemaError); ok {
+		fmt.Fprintf(os.Stderr, "cannot load schema: %s\n%s\n", err.Err, err.Query)
+	} else {
+		fmt.Fprintf(os.Stderr, "cannot load schema: %s\n", err)
+	}
+	os.Exit(1)
+}
+
+func LoadSchema(e Execer, path string) error {
 	queries, err := readSchema(path)
 	if err != nil {
 		return fmt.Errorf("cannot read schema: %s", err)
@@ -33,7 +45,7 @@ func readSchema(path string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read file: %s", err)
 	}
-	return strings.Split(string(b), SchemaSep)
+	return strings.Split(string(b), SchemaSep), nil
 }
 
 type SchemaError struct {
