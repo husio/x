@@ -1,0 +1,23 @@
+[
+  {
+    "Type": "HS256",
+    "PubKey": "ashfqohifqoiwqhfohgasofaofhaosfqigfq",
+    "PrivKey": "ashfqohifqoiwqhfohgasofaofhaosfqigfq",
+    "Payload": "JSON Web Signature (JWS) represents content secured with digital signatures or Message Authentication Codes (MACs) using JSON-based data structures.",
+    "Signature": "TPFb7uwEWo9SpLui0YISHvZHjH0ypQY41V/qukvjOeA="
+  },
+  {
+    "Type": "HS384",
+    "PubKey": "qfw0u019rfu109uf09qw0f9uwq09yu13901093u",
+    "PrivKey": "qfw0u019rfu109uf09qw0f9uwq09yu13901093u",
+    "Payload": "JSON Web Signature (JWS) represents content secured with digital signatures or Message Authentication Codes (MACs) using JSON-based data structures.",
+    "Signature": "8gjqTzhuV/vpqriTZHUNlQaxIRN0dx2JPPx74w02XLUWeMcx1czx2X45JnmrDr5m"
+  },
+  {
+    "Type": "HS512",
+    "PubKey": "asdjhaskjhasfkhsafuoiqwriuqwgfiuwgf",
+    "PrivKey": "asdjhaskjhasfkhsafuoiqwriuqwgfiuwgf",
+    "Payload": "JSON Web Signature (JWS) represents content secured with digital signatures or Message Authentication Codes (MACs) using JSON-based data structures.",
+    "Signature": "hj62eh66NY8pDAUn4yXpMYmbQ/FngZ34ky+gq1zVRy8ZFvTNQz2jq4AFC2r0FwYvRTTchKOUGdpM4VitSfMf5Q=="
+  }
+]
