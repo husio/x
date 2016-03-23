@@ -10,18 +10,23 @@ import (
 	"golang.org/x/net/context"
 )
 
+// Getter is generic interface for getting single entity
 type Getter interface {
 	Get(dest interface{}, query string, args ...interface{}) error
 }
 
+// Selector is generic interface for getting multiple enties
 type Selector interface {
 	Select(dest interface{}, query string, args ...interface{}) error
 }
 
+// Execer is generic interface for executing SQL query with no result
 type Execer interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
+// WithDB return context with given database instance bind to it. Use DB(ctx)
+// to get database back.
 func WithDB(ctx context.Context, dbc *sql.DB) context.Context {
 	dbx := sqlx.NewDb(dbc, "postgres")
 	x := &sqlxdb{dbx: dbx}
@@ -43,6 +48,7 @@ type Connection interface {
 	Commit() error
 }
 
+// DB return database instance carried by given context.
 func DB(ctx context.Context) Database {
 	db := ctx.Value("storage.pg:db")
 	if db == nil {
@@ -51,6 +57,10 @@ func DB(ctx context.Context) Database {
 	return db.(Database)
 }
 
+// CastErr inspect given error and replace generic SQL error with easier to
+// compare equivalent.
+//
+// See http://www.postgresql.org/docs/current/static/errcodes-appendix.html
 func CastErr(err error) error {
 	if err == sql.ErrNoRows {
 		return ErrNotFound
@@ -67,7 +77,8 @@ var (
 )
 
 // sqlxdb wraps sqlx.DB structure and provides custom function notations that
-// can be easily mocked
+// can be easily mocked. This wrapper is required, because of sqlx.DB's Beginx
+// method notation
 type sqlxdb struct {
 	dbx *sqlx.DB
 }
