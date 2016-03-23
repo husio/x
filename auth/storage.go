@@ -50,6 +50,7 @@ func AccountByID(g pg.Getter, accountID int) (*Account, error) {
 	var a Account
 	err := g.Get(&a, `
 		SELECT * FROM accounts WHERE account_id = $1
+		LIMIT 1
 	`, accountID)
 	return &a, pg.CastErr(err)
 }
@@ -58,6 +59,7 @@ func AccountByLogin(g pg.Getter, login, provider string) (*Account, error) {
 	var a Account
 	err := g.Get(&a, `
 		SELECT * FROM accounts WHERE login = $1 AND provider = $2
+		LIMIT 1
 	`, login, provider)
 	return &a, pg.CastErr(err)
 }
@@ -109,6 +111,7 @@ func SessionAccount(g pg.Getter, key string) (*AccountWithScopes, error) {
 		SELECT a.account_id, a.login, a.created, s.scopes
 		FROM accounts a INNER JOIN sessions s ON s.account = a.account_id
 		WHERE s.key = $1
+		LIMIT 1
 	`, key)
 	return &a, pg.CastErr(err)
 }
