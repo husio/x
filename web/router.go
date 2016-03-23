@@ -1,9 +1,7 @@
 package web
 
 import (
-	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -15,67 +13,31 @@ type Routes []Route
 
 type HandlerFunc func(context.Context, http.ResponseWriter, *http.Request)
 
+// Route binds together HTTP method, path and handler function.
 type Route struct {
-	Path    string
-	Name    string
+	// Method is string that can represent one or more, coma separated HTTP
+	// methods that this route should match.
 	Methods string
-	Func    HandlerFunc
+	// Path defines regexp-like pattern match used to determine if route should
+	// handle request.
+	Path string
+	// Func defines HTTP handler that is used to serve request when route is
+	// matching.
+	Func HandlerFunc
 }
 
-func GET(path, name string, fn HandlerFunc) Route {
-	return Route{
-		Path:    path,
-		Name:    name,
-		Methods: "GET",
-		Func:    fn,
-	}
-}
+// AnyMethod is shortcut definition for
+var AnyMethod = "GET,POST,PUT,DELETE"
 
-func POST(path, name string, fn HandlerFunc) Route {
-	return Route{
-		Path:    path,
-		Name:    name,
-		Methods: "POST",
-		Func:    fn,
-	}
-}
-
-func PUT(path, name string, fn HandlerFunc) Route {
-	return Route{
-		Path:    path,
-		Name:    name,
-		Methods: "PUT",
-		Func:    fn,
-	}
-}
-
-func DELETE(path, name string, fn HandlerFunc) Route {
-	return Route{
-		Path:    path,
-		Name:    name,
-		Methods: "DELETE",
-		Func:    fn,
-	}
-}
-
-func ANY(path, name string, fn HandlerFunc) Route {
-	return Route{
-		Path:    path,
-		Name:    name,
-		Methods: "GET,POST,PUT,DELETE",
-		Func:    fn,
-	}
-}
-
-func NewRouter(prefix string, routes Routes) *Router {
-	paths := make(map[string]pathtemplate)
+// NewRouter create and return immutable router instance.
+func NewRouter(routes Routes) *Router {
 	handlers := make(map[string][]handler)
-
-	parser := regexp.MustCompile("{.*?}")
+	builder := regexp.MustCompile("{.*?}")
+	// ReplaceAllString
 
 	for _, r := range routes {
 		var names []string
-		raw := parser.ReplaceAllStringFunc(prefix+r.Path, func(s string) string {
+		raw := builder.ReplaceAllStringFunc(r.Path, func(s string) string {
 			s = s[1 : len(s)-1]
 			// every {<name>} can be optionally contain separate regexp
 			// definition using notation {<name>:<regexp>}
@@ -92,48 +54,30 @@ func NewRouter(prefix string, routes Routes) *Router {
 		if err != nil {
 			panic(fmt.Sprintf("invalid routing path %q: %s", r.Path, err))
 		}
-		methods := strings.Split(strings.TrimSpace(r.Methods), ",")
-		for _, method := range methods {
+		for _, method := range strings.Split(r.Methods, ",") {
 			handlers[method] = append(handlers[method], handler{
-				handlerName: r.Name,
-				rx:          rx,
-				names:       names,
-				fn:          r.Func,
+				rx:    rx,
+				names: names,
+				fn:    r.Func,
 			})
-		}
-
-		if r.Name != "" {
-			t := parser.ReplaceAllString(r.Path, "%v")
-			if tp, ok := paths[r.Name]; ok && t != tp.tmpl {
-				log.Printf("router name duplicate: %s (%v => %v)", r.Name, t, tp.tmpl)
-			}
-			paths[r.Name] = pathtemplate{
-				tmpl: t,
-				argc: len(names),
-			}
 		}
 	}
 	return &Router{
 		handlers: handlers,
-		paths:    paths,
 	}
 }
 
 type Router struct {
-	handlers map[string][]handler    // method => route
-	paths    map[string]pathtemplate // name => url template
+	handlers map[string][]handler // method => route
 }
 
-type pathtemplate struct {
-	tmpl string
-	argc int
-}
-
+// ServeHTTP handle HTTP request using empty context.
 func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	rt.ServeCtxHTTP(ctx, w, r)
 }
 
+// ServeCtxHTTP handle HTTP request using given context.
 func (rt *Router) ServeCtxHTTP(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	for _, h := range rt.handlers[r.Method] {
 		match := h.rx.FindAllStringSubmatch(r.URL.Path, 1)
@@ -142,38 +86,42 @@ func (rt *Router) ServeCtxHTTP(ctx context.Context, w http.ResponseWriter, r *ht
 		}
 		values := match[0]
 
-		ctx := WithArgs(ctx, h.names, values[1:])
+		ctx = context.WithValue(ctx, "router:args", &args{
+			names:  h.names,
+			values: values[1:],
+		})
 		h.fn(ctx, w, r)
 		return
 	}
 }
-
-func WithArgs(ctx context.Context, names, values []string) context.Context {
-	return context.WithValue(ctx, "router:args", &args{names, values})
-}
-
-func (rt *Router) Reverse(name string, args ...interface{}) (string, error) {
-	t, ok := rt.paths[name]
-	if !ok {
-		return "", ErrRouteNotFound
-	}
-	if len(args) != t.argc {
-		return "", fmt.Errorf("%d arguments expected", t.argc)
-	}
-	return fmt.Sprintf(t.tmpl, args...), nil
-}
-
-var ErrRouteNotFound = errors.New("route not found")
 
 type args struct {
 	names  []string
 	values []string
 }
 
+// WithArgs return context with HTTP args set to given list of pairs.
+//
+// Use for testing only.
+func WithArgs(ctx context.Context, pairs ...string) context.Context {
+	if len(pairs)%2 != 0 {
+		panic("Invalid args list: pairs are not even")
+	}
+	a := args{}
+	for i := 0; i < len(pairs); i += 2 {
+		a.names = append(a.names, pairs[i])
+		a.values = append(a.values, pairs[i+1])
+	}
+	return context.WithValue(ctx, "router:args", &a)
+}
+
+// Len return number of arguments.
 func (a *args) Len() int {
 	return len(a.values)
 }
 
+// ByName return URL mached value using name assigned to it. Returns empty
+// string if does not exist.
 func (a *args) ByName(name string) string {
 	for i, n := range a.names {
 		if n == name {
@@ -183,6 +131,8 @@ func (a *args) ByName(name string) string {
 	return ""
 }
 
+// ByIndex return URL mached value using definition position. Returns empty
+// string if does not exist.
 func (a *args) ByIndex(n int) string {
 	if len(a.values) < n {
 		return ""
@@ -191,39 +141,17 @@ func (a *args) ByIndex(n int) string {
 }
 
 type handler struct {
-	rx          *regexp.Regexp
-	handlerName string
-	names       []string
-	fn          HandlerFunc
+	rx    *regexp.Regexp
+	names []string
+	fn    HandlerFunc
 }
 
+// Args return PathArgs carried by given context.
 func Args(ctx context.Context) PathArgs {
-	a := ctx.Value("router:args")
-	if a == nil {
-		panic("router args not present in the context")
-	}
-	return a.(*args)
+	return ctx.Value("router:args").(*args)
 }
 
 type PathArgs interface {
 	ByName(string) string
 	ByIndex(int) string
-}
-
-func WithRouter(ctx context.Context, rt *Router) context.Context {
-	return context.WithValue(ctx, "web:router", rt)
-}
-
-func Reverse(ctx context.Context, name string, args ...interface{}) string {
-	v := ctx.Value("web:router")
-	if v == nil {
-		log.Print("router not present in context")
-		return ""
-	}
-	path, err := v.(*Router).Reverse(name, args...)
-	if err != nil {
-		log.Printf("cannot reverse %s: %s", name, err)
-		return ""
-	}
-	return path
 }

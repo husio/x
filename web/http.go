@@ -13,6 +13,7 @@ import (
 	"golang.org/x/net/context"
 )
 
+// JSONResp write content as JSON encoded response.
 func JSONResp(w http.ResponseWriter, content interface{}, code int) {
 	b, err := json.MarshalIndent(content, "", "\t")
 	if err != nil {
@@ -30,10 +31,12 @@ func JSONResp(w http.ResponseWriter, content interface{}, code int) {
 	_, _ = w.Write(b)
 }
 
+// JSONErr write single error as JSON encoded response.
 func JSONErr(w http.ResponseWriter, errText string, code int) {
 	JSONErrs(w, []string{errText}, code)
 }
 
+// JSONErrs write multiple errors as JSON encoded response.
 func JSONErrs(w http.ResponseWriter, errs []string, code int) {
 	resp := struct {
 		Code   int
@@ -45,14 +48,18 @@ func JSONErrs(w http.ResponseWriter, errs []string, code int) {
 	JSONResp(w, resp, code)
 }
 
+// StdJSONResp write JSON encoded, standard HTTP response text for given status
+// code. Depending on status, either error or successful response format is
+// used.
 func StdJSONResp(w http.ResponseWriter, code int) {
-	JSONResp(w, http.StatusText(code), code)
+	if code >= 400 {
+		JSONErr(w, http.StatusText(code), code)
+	} else {
+		JSONResp(w, http.StatusText(code), code)
+	}
 }
 
-func StdJSONErr(w http.ResponseWriter, code int) {
-	JSONErr(w, http.StatusText(code), code)
-}
-
+// JSONRedirect return redirect response, but with JSON formatted body.
 func JSONRedirect(w http.ResponseWriter, urlStr string, code int) {
 	w.Header().Set("Location", urlStr)
 	var content = struct {
@@ -101,7 +108,6 @@ var tmpl = template.Must(template.New("").Parse(`
 <html lang="en">
 <head>
     <meta charset="utf-8">
-	<link href="/static/style.css" rel="stylesheet">
 {{end}}
 
 
@@ -132,16 +138,6 @@ var tmpl = template.Must(template.New("").Parse(`
 
 `))
 
-type respwrt struct {
-	code int
-	http.ResponseWriter
-}
-
-func (w *respwrt) WriteHeader(code int) {
-	w.code = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
 func LogCall(out io.Writer, fn http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rw := &respwrt{code: http.StatusOK, ResponseWriter: w}
@@ -152,10 +148,21 @@ func LogCall(out io.Writer, fn http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+type respwrt struct {
+	code int
+	http.ResponseWriter
+}
+
+func (w *respwrt) WriteHeader(code int) {
+	w.code = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// CheckLastModified check given request for If-Modified-Since header and if
+// present, compares it with given modification time. If no modification was
+// made, NotModified response is written and true returned. Otherwise
+// Last-Modified header is set for the writer and false returned.
 func CheckLastModified(ctx context.Context, w http.ResponseWriter, r *http.Request, modtime time.Time) bool {
-	if DevMode(ctx) {
-		return false
-	}
 	// https://golang.org/src/net/http/fs.go#L273
 	ms, err := time.Parse(http.TimeFormat, r.Header.Get("If-Modified-Since"))
 	if err == nil && modtime.Before(ms.Add(1*time.Second)) {
@@ -169,17 +176,28 @@ func CheckLastModified(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	return false
 }
 
-func RedirectHandler(path string, code int) HandlerFunc {
+// RedirectHandler return HandlerFunc that always redirect to given url.
+func RedirectHandler(url string, code int) HandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, path, code)
+		http.Redirect(w, r, url, code)
 	}
 }
 
-func StdHandler(code int) HandlerFunc {
+// StdTextHandler return HandlerFunc that always response with text/plain
+// formatted, standard for given status code text message.
+func StdTextHandler(code int) HandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(code)
 		fmt.Fprintln(w, http.StatusText(code))
+	}
+}
+
+// StdJSONHandler return HandlerFunc that always response with JSON encoded,
+// standard for given status code text message.
+func StdJSONHandler(code int) HandlerFunc {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		StdJSONResp(w, code)
 	}
 }
