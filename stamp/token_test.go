@@ -13,19 +13,19 @@ func TestEncode(t *testing.T) {
 		payload interface{}
 		want    string
 	}{
-		"nop_sign_simple_data": {
-			s:       nopSigner{},
+		"xsign_simple_data": {
+			s:       xSigner{},
 			payload: map[string]string{"foo": "bar"},
-			want:    `eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJmb28iOiJiYXIifQ.eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJmb28iOiJiYXIifQ`,
+			want:    `eyJ0eXAiOiJKV1QiLCJhbGciOiJ4In0.eyJmb28iOiJiYXIifQ.eA`,
 		},
-		"nop_sign_complex_data": {
-			s: nopSigner{},
+		"xsign_complex_data": {
+			s: xSigner{},
 			payload: map[string]interface{}{
 				"s": "string",
 				"i": 124,
 				"a": []interface{}{"one", 2, "three"},
 			},
-			want: `eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJhIjpbIm9uZSIsMiwidGhyZWUiXSwiaSI6MTI0LCJzIjoic3RyaW5nIn0.eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJhIjpbIm9uZSIsMiwidGhyZWUiXSwiaSI6MTI0LCJzIjoic3RyaW5nIn0`,
+			want: `eyJ0eXAiOiJKV1QiLCJhbGciOiJ4In0.eyJhIjpbIm9uZSIsMiwidGhyZWUiXSwiaSI6MTI0LCJzIjoic3RyaW5nIn0.eA`,
 		},
 	}
 
@@ -61,23 +61,23 @@ func TestExtendedClaims(t *testing.T) {
 		IsAdmin: true,
 	}
 
-	token, err := Encode(nopSigner{}, &payload)
+	token, err := Encode(xSigner{}, &payload)
 	if err != nil {
 		t.Fatalf("cannot encode: %s", err)
 	}
 
-	expected := []byte(`eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJzdWIiOiJteXN1YiIsImlhdCI6MTQxNzczNzYwMCwidXNlciI6MzIxLCJpc2FkbSI6dHJ1ZX0.eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJzdWIiOiJteXN1YiIsImlhdCI6MTQxNzczNzYwMCwidXNlciI6MzIxLCJpc2FkbSI6dHJ1ZX0`)
+	expected := []byte(`eyJ0eXAiOiJKV1QiLCJhbGciOiJ4In0.eyJzdWIiOiJteXN1YiIsImlhdCI6MTQxNzczNzYwMCwidXNlciI6MzIxLCJpc2FkbSI6dHJ1ZX0.eA`)
 
 	if !bytes.Equal(token, expected) {
 		t.Fatalf("expected token to be \n%q\nbut got\n%q", expected, token)
 	}
 
 	var res MyClaim
-	if err := Decode(nopSigner{}, &res, token); err != nil {
+	if err := Decode(xSigner{}, &res, token); err != nil {
 		t.Fatalf("cannot decode token: %s", err)
 	}
 	if !reflect.DeepEqual(res, payload) {
-		t.Fatalf("x")
+		t.Fatalf("data lost by token; %+v", res)
 	}
 }
 
@@ -94,7 +94,7 @@ func TestClaimExpirationTime(t *testing.T) {
 		err     error
 	}{
 		"not_expired": {
-			s: nopSigner{},
+			s: xSigner{},
 			payload: MyPayload{
 				Claims: Claims{
 					ExpirationTime: now.Add(2 * time.Minute).Unix(),
@@ -103,7 +103,7 @@ func TestClaimExpirationTime(t *testing.T) {
 			err: nil,
 		},
 		"expired": {
-			s: nopSigner{},
+			s: xSigner{},
 			payload: MyPayload{
 				Claims: Claims{
 					ExpirationTime: now.Add(-2 * time.Minute).Unix(),
@@ -112,7 +112,7 @@ func TestClaimExpirationTime(t *testing.T) {
 			err: ErrExpired,
 		},
 		"already_active": {
-			s: nopSigner{},
+			s: xSigner{},
 			payload: MyPayload{
 				Claims: Claims{
 					NotBefore: now.Add(-2 * time.Minute).Unix(),
@@ -121,7 +121,7 @@ func TestClaimExpirationTime(t *testing.T) {
 			err: nil,
 		},
 		"not_yet_active": {
-			s: nopSigner{},
+			s: xSigner{},
 			payload: MyPayload{
 				Claims: Claims{
 					NotBefore: now.Add(2 * time.Minute).Unix(),
@@ -143,7 +143,6 @@ func TestClaimExpirationTime(t *testing.T) {
 	}
 }
 
-/*
 func TestDecode(t *testing.T) {
 	cases := map[string]struct {
 		s     Signer
@@ -151,54 +150,82 @@ func TestDecode(t *testing.T) {
 		want  interface{}
 	}{
 		"nop_sign_simple_data": {
-			s:     nopSigner{},
-			token: `eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJmb28iOiJiYXIifQ.eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJmb28iOiJiYXIifQ`,
-			want:  map[string]string{"foo": "bar"},
+			s:     xSigner{},
+			token: `eyJ0eXAiOiJKV1QiLCJhbGciOiJ4In0.eyJmb28iOiJiYXIifQ.eA`,
+			want:  map[string]interface{}{"foo": "bar"},
 		},
 		"nop_sign_complex_data": {
-			s:     nopSigner{},
-			token: `eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJhIjpbIm9uZSIsMiwidGhyZWUiXSwiaSI6MTI0LCJzIjoic3RyaW5nIn0.eyJ0eXAiOiJKV1QiLCJhbGciOiJub3AifQ.eyJhIjpbIm9uZSIsMiwidGhyZWUiXSwiaSI6MTI0LCJzIjoic3RyaW5nIn0`,
+			s:     xSigner{},
+			token: `eyJ0eXAiOiJKV1QiLCJhbGciOiJ4In0.eyJhIjpbIm9uZSIsMiwidGhyZWUiXSwiaSI6MTI0LCJzIjoic3RyaW5nIn0.eA`,
 			want: map[string]interface{}{
 				"s": "string",
-				"i": 124,
 				"a": []interface{}{"one", 2, "three"},
+				"i": 124,
 			},
 		},
 	}
 
 	for name, tc := range cases {
-		data, err := Decode(tc.s, tc.token)
-
-		if err != nil {
+		payload := make(map[string]interface{})
+		if err := Decode(tc.s, &payload, []byte(tc.token)); err != nil {
 			t.Errorf("%s: cannot decode: %s", name, err)
 			continue
 		}
-		want := []byte(tc.want)
-		if !bytes.Equal(want, token) {
-			t.Errorf("%s: want \n%q, got \n%q", name, want, token)
+		// TODO
+		/*
+			if !reflect.DeepEqual(payload, tc.want) {
+				t.Errorf("%s: want \n%#v, got \n%#v", name, tc.want, payload)
+			}
+		*/
+	}
+}
+
+func BenchmarkDecodeShort(b *testing.B) {
+	var payload struct {
+		IsAdmin bool `json:"isadm"`
+	}
+	var s xSigner
+	token := []byte(`eyJ0eXAiOiJKV1QiLCJhbGciOiJ4In0.eyJpc2FkbSI6ZmFsc2V9.eA`)
+
+	for i := 0; i < b.N; i++ {
+		if err := Decode(s, &payload, token); err != nil {
+			b.Fatalf("cannot decode: %s", err)
 		}
 	}
 }
-*/
 
-// nopSigner is noop signature builder that require signature to be equal to
+func BenchmarkEncodeSmall(b *testing.B) {
+	payload := struct {
+		UserID  int64 `json:"usid"`
+		IsAdmin bool  `json:"isadm"`
+	}{
+		IsAdmin: true,
+		UserID:  12345,
+	}
+	var s xSigner
+	for i := 0; i < b.N; i++ {
+		if _, err := Encode(s, &payload); err != nil {
+			b.Fatalf("cannot encode: %s", err)
+		}
+	}
+}
+
+// xSigner is noop signature builder that require signature to be equal to
 // signed data.
-type nopSigner struct {
+type xSigner struct {
 }
 
-func (nopSigner) Algorithm() string {
-	return "nop"
+func (xSigner) Algorithm() string {
+	return "x"
 }
 
-func (nopSigner) Verify(signature, data []byte) error {
-	if !bytes.Equal(signature, data) {
+func (xSigner) Verify(signature, data []byte) error {
+	if string(signature) != "x" {
 		return ErrInvalidSignature
 	}
 	return nil
 }
 
-func (nopSigner) Sign(data []byte) ([]byte, error) {
-	sig := make([]byte, len(data))
-	copy(sig, data)
-	return sig, nil
+func (xSigner) Sign(data []byte) ([]byte, error) {
+	return []byte("x"), nil
 }

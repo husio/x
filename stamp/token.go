@@ -114,7 +114,7 @@ type Claims struct {
 }
 
 func Encode(s Signer, payload interface{}) ([]byte, error) {
-	header, err := encode(Header{
+	header, err := encodeJSON(Header{
 		Type:      "JWT",
 		Algorithm: s.Algorithm(),
 	})
@@ -122,7 +122,7 @@ func Encode(s Signer, payload interface{}) ([]byte, error) {
 		return nil, fmt.Errorf("cannot encode header: %s", err)
 	}
 
-	content, err := encode(payload)
+	content, err := encodeJSON(payload)
 	if err != nil {
 		return nil, fmt.Errorf("cannot encode payload: %s", err)
 	}
@@ -133,6 +133,10 @@ func Encode(s Signer, payload interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot sign: %s", err)
 	}
+	signature, err = encode(signature)
+	if err != nil {
+		return nil, fmt.Errorf("cannot encode signature: %s", err)
+	}
 
 	token = bytes.Join([][]byte{token, signature}, []byte("."))
 	return token, nil
@@ -140,13 +144,17 @@ func Encode(s Signer, payload interface{}) ([]byte, error) {
 
 // encode serialize given data into JSON and return it's base64 representation
 // with base64 padding removed.
-func encode(x interface{}) ([]byte, error) {
-	js, err := json.Marshal(x)
+func encodeJSON(x interface{}) ([]byte, error) {
+	b, err := json.Marshal(x)
 	if err != nil {
 		return nil, err
 	}
-	b64 := make([]byte, base64.URLEncoding.EncodedLen(len(js)))
-	enc.Encode(b64, js)
+	return encode(b)
+}
+
+func encode(b []byte) ([]byte, error) {
+	b64 := make([]byte, base64.URLEncoding.EncodedLen(len(b)))
+	enc.Encode(b64, b)
 	return bytes.TrimRight(b64, "="), nil
 }
 
@@ -156,11 +164,15 @@ func Decode(s Signer, payload interface{}, token []byte) error {
 		return ErrMalformedToken
 	}
 
-	rawHeader := fixPadding(copyb(chunks[0]))
-	rawPayload := fixPadding(copyb(chunks[1]))
+	rawHeader := fixPadding(chunks[0])
+	rawPayload := fixPadding(chunks[1])
+	rawSignature := fixPadding(chunks[2])
 
 	bufsize := enc.DecodedLen(len(rawHeader))
 	if size := enc.DecodedLen(len(rawPayload)); size > bufsize {
+		bufsize = size
+	}
+	if size := enc.DecodedLen(len(rawSignature)); size > bufsize {
 		bufsize = size
 	}
 	buf := make([]byte, bufsize)
@@ -180,16 +192,22 @@ func Decode(s Signer, payload interface{}, token []byte) error {
 		return ErrInvalidSigner
 	}
 
+	b = buf[:enc.DecodedLen(len(rawSignature))]
+	if n, err := enc.Decode(b, rawSignature); err != nil {
+		return fmt.Errorf("cannot base64 decode signature: %s", err)
+	} else {
+		b = b[:n]
+	}
+	beforeSign := token[:len(token)-len(chunks[2])-1]
+	if err := s.Verify(b, beforeSign); err != nil {
+		return err
+	}
+
 	b = buf[:enc.DecodedLen(len(rawPayload))]
 	if n, err := enc.Decode(b, rawPayload); err != nil {
 		return fmt.Errorf("cannot base64 decode payload: %s", err)
 	} else {
 		b = b[:n]
-	}
-
-	beforeSign := token[:len(token)-len(chunks[2])-1]
-	if err := s.Verify(chunks[2], beforeSign); err != nil {
-		return err
 	}
 
 	var claims Claims
@@ -222,15 +240,11 @@ var (
 // if necessary.
 func fixPadding(b []byte) []byte {
 	if n := len(b) % 4; n > 0 {
-		return append(b, bytes.Repeat([]byte("="), 4-n)...)
+		res := make([]byte, len(b), len(b)+4)
+		copy(res, b)
+		return append(res, bytes.Repeat([]byte("="), 4-n)...)
 	}
 	return b
-}
-
-func copyb(b []byte) []byte {
-	c := make([]byte, len(b), len(b)+4)
-	copy(c, b)
-	return c
 }
 
 var enc = base64.URLEncoding

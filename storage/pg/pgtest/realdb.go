@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/optiopay/legal-service/pg"
+	"github.com/husio/x/storage/pg"
 )
 
 // CreateDB connect to PostgreSQL instance, create database and return

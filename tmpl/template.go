@@ -11,7 +11,7 @@ import (
 
 var (
 	// XXX race conditions when in debug mode
-	tmpl      = template.New("").Funcs(funcs)
+	tmpl      *template.Template
 	tmplGlob  string
 	tmplCache bool
 )
@@ -36,7 +36,8 @@ func LoadTemplates(glob string, cache bool) error {
 	tmplGlob = glob
 	tmplCache = cache
 
-	t, err := tmpl.ParseGlob(glob)
+	t := template.New("").Funcs(funcs)
+	t, err := t.ParseGlob(glob)
 	if err != nil {
 		return err
 	}
