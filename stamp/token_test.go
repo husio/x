@@ -5,11 +5,13 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/husio/x/stamp/signer"
 )
 
 func TestEncode(t *testing.T) {
 	cases := map[string]struct {
-		s       Signer
+		s       signer.Signer
 		payload interface{}
 		want    string
 	}{
@@ -89,7 +91,7 @@ func TestClaimExpirationTime(t *testing.T) {
 	now := time.Now()
 
 	cases := map[string]struct {
-		s       Signer
+		s       signer.Signer
 		payload MyPayload
 		err     error
 	}{
@@ -145,7 +147,7 @@ func TestClaimExpirationTime(t *testing.T) {
 
 func TestDecode(t *testing.T) {
 	cases := map[string]struct {
-		s     Signer
+		s     signer.Signer
 		token string
 		want  interface{}
 	}{
@@ -221,7 +223,7 @@ func (xSigner) Algorithm() string {
 
 func (xSigner) Verify(signature, data []byte) error {
 	if string(signature) != "x" {
-		return ErrInvalidSignature
+		return signer.ErrInvalidSignature
 	}
 	return nil
 }

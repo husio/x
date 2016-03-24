@@ -1,13 +1,17 @@
-package stamp
+package signer
 
 import (
 	"bytes"
+	"crypto/rsa"
 	_ "crypto/sha256"
 	_ "crypto/sha512"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"strings"
 	"testing"
 )
 
@@ -20,8 +24,7 @@ func TestSigners(t *testing.T) {
 	if *updateFl {
 		t.Logf("updaring gilden data fixture: %s", fixturePath)
 		for _, g := range golden {
-			g.PubKey = nonempty(g.PubKey, g.PrivKey)
-			g.PrivKey = nonempty(g.PrivKey, g.PubKey)
+			g.Key = loadValue(t, g.Key)
 			if b, err := g.Signer(t).Sign([]byte(g.Payload)); err != nil {
 				t.Errorf("cannot create signature for %s: %s", g, err)
 			} else {
@@ -36,6 +39,7 @@ func TestSigners(t *testing.T) {
 	}
 
 	for _, g := range golden {
+		g.Key = loadValue(t, g.Key)
 		sig := g.Signer(t)
 		if err := sig.Verify(g.Signature, []byte(g.Payload)); err != nil {
 			t.Errorf("%s: invalid signature: %s", g, err)
@@ -65,8 +69,7 @@ func loadGoldenData(t *testing.T, path string) []*signerFixture {
 
 type signerFixture struct {
 	Type      string
-	PubKey    string
-	PrivKey   string
+	Key       string
 	Payload   string
 	Signature []byte
 }
@@ -74,14 +77,20 @@ type signerFixture struct {
 func (sf *signerFixture) Signer(t *testing.T) Signer {
 	switch sf.Type {
 	case "HS256":
-		key := nonempty(sf.PrivKey, sf.PubKey)
-		return NewHMAC256Signer([]byte(key))
+		return NewHMAC256Signer([]byte(sf.Key))
 	case "HS384":
-		key := nonempty(sf.PrivKey, sf.PubKey)
-		return NewHMAC384Signer([]byte(key))
+		return NewHMAC384Signer([]byte(sf.Key))
 	case "HS512":
-		key := nonempty(sf.PrivKey, sf.PubKey)
-		return NewHMAC512Signer([]byte(key))
+		return NewHMAC512Signer([]byte(sf.Key))
+	case "RS256":
+		key := rsakey(t, strings.TrimSpace(sf.Key))
+		return NewRSA256Signer(key)
+	case "RS384":
+		key := rsakey(t, strings.TrimSpace(sf.Key))
+		return NewRSA384Signer(key)
+	case "RS512":
+		key := rsakey(t, strings.TrimSpace(sf.Key))
+		return NewRSA512Signer(key)
 	}
 
 	t.Fatalf("unsupported signer type: %s", sf.Type)
@@ -103,4 +112,28 @@ func nonempty(sts ...string) string {
 		}
 	}
 	return ""
+}
+
+func rsakey(t *testing.T, rawPriv string) *rsa.PrivateKey {
+	block, _ := pem.Decode([]byte(rawPriv))
+	if block == nil || block.Type != "RSA PRIVATE KEY" {
+		t.Fatalf("invalid private key: %s", rawPriv)
+	}
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		t.Fatalf("cannot parse private key: %s", err)
+	}
+	return key
+}
+
+func loadValue(t *testing.T, s string) string {
+	if len(s) == 0 || s[0] != '@' {
+		return s
+	}
+
+	b, err := ioutil.ReadFile(s[1:])
+	if err != nil {
+		t.Fatalf("cannot load fixture %q: %s", s, err)
+	}
+	return string(b)
 }

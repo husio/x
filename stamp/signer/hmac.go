@@ -1,45 +1,10 @@
-package stamp
+package signer
 
 import (
 	"crypto"
 	"crypto/hmac"
-	"errors"
 	"fmt"
 )
-
-type Vault struct {
-	signers map[string]Signer
-}
-
-func NewVault(signers map[string]Signer) *Vault {
-	v := Vault{
-		signers: make(map[string]Signer),
-	}
-	for method, s := range signers {
-		v.signers[method] = s
-	}
-	return &v
-}
-
-type Signer interface {
-	// Algorithm return algorithm used by signer implementation.
-	Algorithm() string
-	// Verify returns nil if given signature was computed for given data.
-	Verify(signature, data []byte) error
-	// Sign return signature computed for given data.
-	Sign(data []byte) ([]byte, error)
-}
-
-var (
-	ErrAlgorithmNotAvailable = errors.New("algorithm not available")
-	ErrInvalidSignature      = errors.New("invalid signature")
-)
-
-type sigHMAC struct {
-	alg  string
-	key  []byte
-	hash crypto.Hash
-}
 
 // NewHMACSigner return signer using symetric key and SHA256 hashing function.
 func NewHMAC256Signer(key []byte) Signer {
@@ -66,6 +31,12 @@ func NewHMAC512Signer(key []byte) Signer {
 		key:  append([]byte{}, key...),
 		hash: crypto.SHA512,
 	}
+}
+
+type sigHMAC struct {
+	alg  string
+	key  []byte
+	hash crypto.Hash
 }
 
 func (s *sigHMAC) Algorithm() string {

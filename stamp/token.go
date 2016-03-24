@@ -7,38 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/husio/x/stamp/signer"
 )
-
-type Header struct {
-	// The "typ" (type) Header Parameter defined by [JWS] and [JWE] is used by
-	// JWT applications to declare the media type [IANA.MediaTypes] of this
-	// complete JWT.  This is intended for use by the JWT application when
-	// values that are not JWTs could also be present in an application data
-	// structure that can contain a JWT object; the application can use this
-	// value to disambiguate among the different kinds of objects that might be
-	// present.  It will typically not be used by applications when it is
-	// already known that the object is a JWT.  This parameter is ignored by
-	// JWT implementations; any processing of this parameter is performed by
-	// the JWT application.  If present, it is RECOMMENDED that its value be
-	// "JWT" to indicate that this object is a JWT.  While media type names are
-	// not case sensitive, it is RECOMMENDED that "JWT" always be spelled using
-	// uppercase characters for compatibility with legacy implementations.
-	//
-	// Use of this Header Parameter is OPTIONAL.
-	Type string `json:"typ,omitempty"`
-
-	// The "alg" (algorithm) Header Parameter identifies the cryptographic
-	// algorithm used to secure the JWS. The JWS Signature value is not valid
-	// if the "alg" value does not represent a supported algorithm or if there
-	// is not a key for use with that algorithm associated with the party that
-	// digitally signed or MACed the content. "alg" values should either be
-	// registered in the IANA "JSON Web Signature and Encryption Algorithms"
-	// registry established by [JWA] or be a value that contains a
-	// Collision-Resistant Name.  The "alg" value is a case- sensitive ASCII
-	// string containing a StringOrURI value. This Header Parameter MUST be
-	// present and MUST be understood and processed by implementations.
-	Algorithm string `json:"alg"`
-}
 
 type Claims struct {
 	// The "iss" (issuer) claim identifies the principal that issued the JWT.
@@ -113,8 +84,11 @@ type Claims struct {
 	JWTID string `json:"jti,omitempty"`
 }
 
-func Encode(s Signer, payload interface{}) ([]byte, error) {
-	header, err := encodeJSON(Header{
+func Encode(s signer.Signer, payload interface{}) ([]byte, error) {
+	header, err := encodeJSON(struct {
+		Type      string `json:"typ,omitempty"`
+		Algorithm string `json:"alg"`
+	}{
 		Type:      "JWT",
 		Algorithm: s.Algorithm(),
 	})
@@ -158,7 +132,7 @@ func encode(b []byte) ([]byte, error) {
 	return bytes.TrimRight(b64, "="), nil
 }
 
-func Decode(s Signer, payload interface{}, token []byte) error {
+func Decode(s signer.Signer, payload interface{}, token []byte) error {
 	chunks := bytes.SplitN(token, []byte("."), 3)
 	if len(chunks) != 3 {
 		return ErrMalformedToken
@@ -177,21 +151,24 @@ func Decode(s Signer, payload interface{}, token []byte) error {
 	}
 	buf := make([]byte, bufsize)
 
+	// decode header
 	b := buf[:enc.DecodedLen(len(rawHeader))]
 	if n, err := enc.Decode(b, rawHeader); err != nil {
 		return fmt.Errorf("cannot base64 decode header: %s", err)
 	} else {
 		b = b[:n]
 	}
-	var header Header
+	var header struct {
+		Algorithm string `json:"alg"`
+	}
 	if err := json.Unmarshal(bytes.TrimSpace(b), &header); err != nil {
 		return fmt.Errorf("cannot JSON decode header: %s", err)
 	}
-
 	if header.Algorithm != s.Algorithm() {
 		return ErrInvalidSigner
 	}
 
+	// validate signature
 	b = buf[:enc.DecodedLen(len(rawSignature))]
 	if n, err := enc.Decode(b, rawSignature); err != nil {
 		return fmt.Errorf("cannot base64 decode signature: %s", err)
@@ -203,14 +180,24 @@ func Decode(s Signer, payload interface{}, token []byte) error {
 		return err
 	}
 
+	// decode payload
 	b = buf[:enc.DecodedLen(len(rawPayload))]
 	if n, err := enc.Decode(b, rawPayload); err != nil {
 		return fmt.Errorf("cannot base64 decode payload: %s", err)
 	} else {
 		b = b[:n]
 	}
+	// even if token expired, we still want to unpack the data, so to this
+	// first
+	if err := json.Unmarshal(b, &payload); err != nil {
+		return fmt.Errorf("cannot base64 decode payload: %s", err)
+	}
 
-	var claims Claims
+	// make sure token is still valid
+	var claims struct {
+		ExpirationTime int64 `json:"exp,omitempty"`
+		NotBefore      int64 `json:"nbf,omitempty"`
+	}
 	if err := json.Unmarshal(b, &claims); err != nil {
 		return fmt.Errorf("cannot base64 decode payload: %s", err)
 	}
@@ -220,10 +207,6 @@ func Decode(s Signer, payload interface{}, token []byte) error {
 	}
 	if claims.NotBefore != 0 && claims.NotBefore > now.Unix() {
 		return ErrNotReady
-	}
-
-	if err := json.Unmarshal(b, &payload); err != nil {
-		return fmt.Errorf("cannot base64 decode payload: %s", err)
 	}
 
 	return nil
