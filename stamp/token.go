@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/husio/x/stamp/signer"
 )
 
 type Claims struct {
@@ -84,7 +82,7 @@ type Claims struct {
 	JWTID string `json:"jti,omitempty"`
 }
 
-func Encode(s signer.Signer, payload interface{}) ([]byte, error) {
+func Encode(s Signer, payload interface{}) ([]byte, error) {
 	header, err := encodeJSON(struct {
 		Type      string `json:"typ,omitempty"`
 		Algorithm string `json:"alg"`
@@ -132,7 +130,7 @@ func encode(b []byte) ([]byte, error) {
 	return bytes.TrimRight(b64, "="), nil
 }
 
-func Decode(s signer.Signer, payload interface{}, token []byte) error {
+func Decode(v Verifier, payload interface{}, token []byte) error {
 	chunks := bytes.SplitN(token, []byte("."), 3)
 	if len(chunks) != 3 {
 		return ErrMalformedToken
@@ -164,7 +162,7 @@ func Decode(s signer.Signer, payload interface{}, token []byte) error {
 	if err := json.Unmarshal(bytes.TrimSpace(b), &header); err != nil {
 		return fmt.Errorf("cannot JSON decode header: %s", err)
 	}
-	if header.Algorithm != s.Algorithm() {
+	if header.Algorithm != v.Algorithm() {
 		return ErrInvalidSigner
 	}
 
@@ -176,7 +174,7 @@ func Decode(s signer.Signer, payload interface{}, token []byte) error {
 		b = b[:n]
 	}
 	beforeSign := token[:len(token)-len(chunks[2])-1]
-	if err := s.Verify(b, beforeSign); err != nil {
+	if err := v.Verify(b, beforeSign); err != nil {
 		return err
 	}
 
@@ -190,7 +188,7 @@ func Decode(s signer.Signer, payload interface{}, token []byte) error {
 	// even if token expired, we still want to unpack the data, so to this
 	// first
 	if err := json.Unmarshal(b, &payload); err != nil {
-		return fmt.Errorf("cannot base64 decode payload: %s", err)
+		return fmt.Errorf("cannot JSON decode payload: %s", err)
 	}
 
 	// make sure token is still valid
@@ -199,7 +197,7 @@ func Decode(s signer.Signer, payload interface{}, token []byte) error {
 		NotBefore      int64 `json:"nbf,omitempty"`
 	}
 	if err := json.Unmarshal(b, &claims); err != nil {
-		return fmt.Errorf("cannot base64 decode payload: %s", err)
+		return fmt.Errorf("cannot JSON decode payload: %s", err)
 	}
 	now := time.Now()
 	if claims.ExpirationTime != 0 && claims.ExpirationTime < now.Unix() {
@@ -215,6 +213,7 @@ func Decode(s signer.Signer, payload interface{}, token []byte) error {
 var (
 	ErrMalformedToken = errors.New("malformed token")
 	ErrInvalidSigner  = errors.New("invalid signer algorithm")
+	ErrNoSigner       = errors.New("no signer")
 	ErrExpired        = errors.New("expired")
 	ErrNotReady       = errors.New("token not yet active")
 )
