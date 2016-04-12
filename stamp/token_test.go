@@ -185,7 +185,7 @@ func BenchmarkDecodeShort(b *testing.B) {
 		IsAdmin bool `json:"isadm"`
 	}
 	var s xSigner
-	token := []byte(`eyJ0eXAiOiJKV1QiLCJhbGciOiJ4In0.eyJpc2FkbSI6ZmFsc2V9.eA`)
+	token := []byte(`eyJhbGciOiJ4Iiwia2lkIjoieCJ9.eyJ1c2lkIjoxMjM0NSwiaXNhZG0iOnRydWV9.eA`)
 
 	for i := 0; i < b.N; i++ {
 		if err := Decode(s, &payload, token); err != nil {

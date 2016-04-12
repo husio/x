@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+// Vault is register holding information about signers and keys used to create
+// and verify tokens.
 type Vault struct {
 	signers atomic.Value
 }
@@ -26,6 +28,8 @@ func (v *Vault) namedSigners() []signer {
 	return sigs.([]signer)
 }
 
+// Add registers new signer under given name. If name is already in use, old
+// entry is overwritten.
 func (v *Vault) Add(name string, sig Signer, expireIn time.Duration) {
 	old := v.namedSigners()
 	new := make([]signer, 0, len(old)+1)
@@ -75,13 +79,18 @@ func (v *Vault) newestSigner() (string, Signer, bool) {
 	return "", nil, false
 }
 
+// Encode returns token containing given payload and encoded using most recent
+// signer.
 func (v *Vault) Encode(payload interface{}) ([]byte, error) {
 	name, sig, ok := v.newestSigner()
 	if !ok {
 		return nil, ErrNoSigner
 	}
 
-	header, err := encodeJSON(tokenHeader{
+	header, err := encodeJSON(struct {
+		Algorithm string `json:"alg"`
+		KeyID     string `json:"kid,omitempty"`
+	}{
 		Algorithm: sig.Algorithm(),
 		KeyID:     name,
 	})
@@ -109,58 +118,46 @@ func (v *Vault) Encode(payload interface{}) ([]byte, error) {
 	return token, nil
 }
 
-type tokenHeader struct {
-	Type      string `json:"typ,omitempty"`
-	Algorithm string `json:"alg"`
-	KeyID     string `json:"kid,omitempty"`
-}
-
+// Decode unpack token payload into provided structure. Token signature is
+// validated by matching algorithm and key id information from the header with
+// vault's signers.
 func (v *Vault) Decode(payload interface{}, token []byte) error {
-	chunks := bytes.SplitN(token, []byte("."), 3)
+	chunks := bytes.Split(token, []byte("."))
 	if len(chunks) != 3 {
 		return ErrMalformedToken
 	}
 
-	rawHeader := fixPadding(chunks[0])
-	rawPayload := fixPadding(chunks[1])
-	rawSignature := fixPadding(chunks[2])
-
-	bufsize := enc.DecodedLen(len(rawHeader))
-	if size := enc.DecodedLen(len(rawPayload)); size > bufsize {
-		bufsize = size
-	}
-	if size := enc.DecodedLen(len(rawSignature)); size > bufsize {
-		bufsize = size
-	}
-	buf := make([]byte, bufsize)
+	// create big enough buffer
+	buf := make([]byte, maxlen(chunks)+3)
+	var b []byte
 
 	// decode header
-	b := buf[:enc.DecodedLen(len(rawHeader))]
-	if n, err := enc.Decode(b, rawHeader); err != nil {
+	if n, err := enc.Decode(buf, fixPadding(chunks[0])); err != nil {
 		return fmt.Errorf("cannot base64 decode header: %s", err)
 	} else {
-		b = b[:n]
+		b = buf[:n]
 	}
-
-	var header tokenHeader
-	if err := json.Unmarshal(bytes.TrimSpace(b), &header); err != nil {
+	var header struct {
+		Algorithm string `json:"alg"`
+		KeyID     string `json:"kid"`
+	}
+	if err := json.Unmarshal(b, &header); err != nil {
 		return fmt.Errorf("cannot JSON decode header: %s", err)
 	}
 
 	// decode payload
-	b = buf[:enc.DecodedLen(len(rawPayload))]
-	if n, err := enc.Decode(b, rawPayload); err != nil {
+	if n, err := enc.Decode(buf, fixPadding(chunks[1])); err != nil {
 		return fmt.Errorf("cannot base64 decode payload: %s", err)
 	} else {
-		b = b[:n]
+		b = buf[:n]
 	}
 	if err := json.Unmarshal(b, &payload); err != nil {
 		return fmt.Errorf("cannot JSON decode payload: %s", err)
 	}
 	// decode extra claims that will be used later for the validation
 	var claims struct {
-		ExpirationTime int64 `json:"exp,omitempty"`
-		NotBefore      int64 `json:"nbf,omitempty"`
+		ExpirationTime int64 `json:"exp"`
+		NotBefore      int64 `json:"nbf"`
 	}
 	if err := json.Unmarshal(b, &claims); err != nil {
 		return fmt.Errorf("cannot JSON decode payload: %s", err)
@@ -175,11 +172,10 @@ func (v *Vault) Decode(payload interface{}, token []byte) error {
 	}
 
 	// validate signature
-	b = buf[:enc.DecodedLen(len(rawSignature))]
-	if n, err := enc.Decode(b, rawSignature); err != nil {
+	if n, err := enc.Decode(buf, fixPadding(chunks[2])); err != nil {
 		return fmt.Errorf("cannot base64 decode signature: %s", err)
 	} else {
-		b = b[:n]
+		b = buf[:n]
 	}
 	beforeSign := token[:len(token)-len(chunks[2])-1]
 	if err := sig.Verify(b, beforeSign); err != nil {

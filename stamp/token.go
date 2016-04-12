@@ -9,6 +9,20 @@ import (
 	"time"
 )
 
+// Claims defines defined by standard field declarations. Embed it in your
+// payload whenever you need to provide defined by standard attributes:
+//
+//     payload := struct {
+//         Claims
+//         ID   int
+//         Role string
+//     }{
+//         Claims: Claims{
+//             ExpirationTime: time.Now().Add(24 * time.Hour),
+//         },
+//         ID:   123456789,
+//         Role: "admin",
+//     }
 type Claims struct {
 	// The "iss" (issuer) claim identifies the principal that issued the JWT.
 	// The processing of this claim is generally application specific.  The
@@ -82,6 +96,7 @@ type Claims struct {
 	JWTID string `json:"jti,omitempty"`
 }
 
+// Encode return token signed by provided signer.
 func Encode(s Signer, payload interface{}) ([]byte, error) {
 	header, err := encodeJSON(struct {
 		Type      string `json:"typ,omitempty"`
@@ -127,39 +142,31 @@ func encodeJSON(x interface{}) ([]byte, error) {
 func encode(b []byte) ([]byte, error) {
 	b64 := make([]byte, base64.URLEncoding.EncodedLen(len(b)))
 	enc.Encode(b64, b)
-	return bytes.TrimRight(b64, "="), nil
+	b64 = bytes.TrimRight(b64, "=")
+	return b64, nil
 }
 
+// Decode check token's signature using provided verifier and if correct,
+// unpack token's payload.
 func Decode(v Verifier, payload interface{}, token []byte) error {
-	chunks := bytes.SplitN(token, []byte("."), 3)
+	chunks := bytes.Split(token, []byte("."))
 	if len(chunks) != 3 {
 		return ErrMalformedToken
 	}
 
-	rawHeader := fixPadding(chunks[0])
-	rawPayload := fixPadding(chunks[1])
-	rawSignature := fixPadding(chunks[2])
-
-	bufsize := enc.DecodedLen(len(rawHeader))
-	if size := enc.DecodedLen(len(rawPayload)); size > bufsize {
-		bufsize = size
-	}
-	if size := enc.DecodedLen(len(rawSignature)); size > bufsize {
-		bufsize = size
-	}
-	buf := make([]byte, bufsize)
+	buf := make([]byte, maxlen(chunks)+3)
+	var b []byte
 
 	// decode header
-	b := buf[:enc.DecodedLen(len(rawHeader))]
-	if n, err := enc.Decode(b, rawHeader); err != nil {
+	if n, err := enc.Decode(buf, fixPadding(chunks[0])); err != nil {
 		return fmt.Errorf("cannot base64 decode header: %s", err)
 	} else {
-		b = b[:n]
+		b = buf[:n]
 	}
 	var header struct {
 		Algorithm string `json:"alg"`
 	}
-	if err := json.Unmarshal(bytes.TrimSpace(b), &header); err != nil {
+	if err := json.Unmarshal(b, &header); err != nil {
 		return fmt.Errorf("cannot JSON decode header: %s", err)
 	}
 	if header.Algorithm != v.Algorithm() {
@@ -167,11 +174,10 @@ func Decode(v Verifier, payload interface{}, token []byte) error {
 	}
 
 	// validate signature
-	b = buf[:enc.DecodedLen(len(rawSignature))]
-	if n, err := enc.Decode(b, rawSignature); err != nil {
+	if n, err := enc.Decode(buf, fixPadding(chunks[2])); err != nil {
 		return fmt.Errorf("cannot base64 decode signature: %s", err)
 	} else {
-		b = b[:n]
+		b = buf[:n]
 	}
 	beforeSign := token[:len(token)-len(chunks[2])-1]
 	if err := v.Verify(b, beforeSign); err != nil {
@@ -179,11 +185,10 @@ func Decode(v Verifier, payload interface{}, token []byte) error {
 	}
 
 	// decode payload
-	b = buf[:enc.DecodedLen(len(rawPayload))]
-	if n, err := enc.Decode(b, rawPayload); err != nil {
+	if n, err := enc.Decode(buf, fixPadding(chunks[1])); err != nil {
 		return fmt.Errorf("cannot base64 decode payload: %s", err)
 	} else {
-		b = b[:n]
+		b = buf[:n]
 	}
 	// even if token expired, we still want to unpack the data, so to this
 	// first
@@ -230,3 +235,13 @@ func fixPadding(b []byte) []byte {
 }
 
 var enc = base64.URLEncoding
+
+func maxlen(a [][]byte) int {
+	max := 0
+	for _, b := range a {
+		if l := len(b); l > max {
+			max = l
+		}
+	}
+	return max
+}

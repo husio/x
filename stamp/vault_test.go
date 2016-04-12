@@ -84,3 +84,36 @@ func (ns *nsig) Verify(signature, data []byte) error {
 func (ns *nsig) Sign(data []byte) ([]byte, error) {
 	return []byte("sig:" + ns.name), nil
 }
+
+func BenchmarkVaultDecodeShort(b *testing.B) {
+	var v Vault
+	v.Add("x", xSigner{}, time.Hour)
+
+	var payload struct {
+		IsAdmin bool `json:"isadm"`
+	}
+	token := []byte(`eyJhbGciOiJ4Iiwia2lkIjoieCJ9.eyJ1c2lkIjoxMjM0NSwiaXNhZG0iOnRydWV9.eA`)
+	for i := 0; i < b.N; i++ {
+		if err := v.Decode(&payload, token); err != nil {
+			b.Fatalf("cannot decode: %s", err)
+		}
+	}
+}
+
+func BenchmarkVaultEncodeSmall(b *testing.B) {
+	var v Vault
+	v.Add("x", xSigner{}, time.Hour)
+
+	payload := struct {
+		UserID  int64 `json:"usid"`
+		IsAdmin bool  `json:"isadm"`
+	}{
+		IsAdmin: true,
+		UserID:  12345,
+	}
+	for i := 0; i < b.N; i++ {
+		if _, err := v.Encode(&payload); err != nil {
+			b.Fatalf("cannot encode: %s", err)
+		}
+	}
+}
