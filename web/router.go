@@ -27,7 +27,7 @@ type Route struct {
 }
 
 // AnyMethod is shortcut definition for
-var AnyMethod = "GET,POST,PUT,DELETE"
+var AnyMethod = "GET,POST,PUT,DELETE,PATCH"
 
 // NewRouter create and return immutable router instance.
 func NewRouter(routes Routes) *Router {

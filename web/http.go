@@ -162,7 +162,7 @@ func (w *respwrt) WriteHeader(code int) {
 // present, compares it with given modification time. If no modification was
 // made, NotModified response is written and true returned. Otherwise
 // Last-Modified header is set for the writer and false returned.
-func CheckLastModified(ctx context.Context, w http.ResponseWriter, r *http.Request, modtime time.Time) bool {
+func CheckLastModified(w http.ResponseWriter, r *http.Request, modtime time.Time) bool {
 	// https://golang.org/src/net/http/fs.go#L273
 	ms, err := time.Parse(http.TimeFormat, r.Header.Get("If-Modified-Since"))
 	if err == nil && modtime.Before(ms.Add(1*time.Second)) {
