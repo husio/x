@@ -2,7 +2,9 @@ package stamp
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -11,13 +13,8 @@ import (
 // Vault is register holding information about signers and keys used to create
 // and verify tokens.
 type Vault struct {
-	signers atomic.Value
-}
-
-type signer struct {
-	name      string
-	sig       Signer
-	validTill time.Time
+	signers   atomic.Value
+	verifiers atomic.Value
 }
 
 func (v *Vault) namedSigners() []signer {
@@ -28,9 +25,28 @@ func (v *Vault) namedSigners() []signer {
 	return sigs.([]signer)
 }
 
-// Add registers new signer under given name. If name is already in use, old
+type signer struct {
+	name      string
+	sig       Signer
+	validTill time.Time
+}
+
+func (v *Vault) namedVerifiers() []verifier {
+	vers := v.verifiers.Load()
+	if vers == nil {
+		return nil
+	}
+	return vers.([]verifier)
+}
+
+type verifier struct {
+	name string
+	ver  Verifier
+}
+
+// AddSigner registers new signer under given name. If name is already in use, old
 // entry is overwritten.
-func (v *Vault) Add(name string, sig Signer, expireIn time.Duration) {
+func (v *Vault) AddSigner(name string, sig Signer, expireIn time.Duration) {
 	old := v.namedSigners()
 	new := make([]signer, 0, len(old)+1)
 
@@ -51,6 +67,29 @@ func (v *Vault) Add(name string, sig Signer, expireIn time.Duration) {
 	}
 
 	v.signers.Store(new)
+}
+
+// AddVerifier registers new signature verifier under given name. If name is
+// ready in use, old entry is overwritten.
+func (v *Vault) AddVerifier(name string, ver Verifier) {
+	old := v.namedVerifiers()
+	new := make([]verifier, 0, len(old)+1)
+
+	new = append(new, verifier{
+		name: name,
+		ver:  ver,
+	})
+	// copy all old verifiers
+	for _, ver := range old {
+		if ver.name != name {
+			new = append(new, verifier{
+				name: ver.name,
+				ver:  ver.ver,
+			})
+		}
+	}
+
+	v.verifiers.Store(new)
 }
 
 // signerByID return register signer by name it was registered
@@ -77,6 +116,21 @@ func (v *Vault) newestSigner() (string, Signer, bool) {
 		}
 	}
 	return "", nil, false
+}
+
+// verifierByID return register verifier by name it was registered
+func (v *Vault) verifierByID(name string) (Verifier, error) {
+	for _, v := range v.namedVerifiers() {
+		if v.name != name {
+			continue
+		}
+		return v.ver, nil
+	}
+	sig, err := v.signerByID(name)
+	if err != nil {
+		return nil, ErrNoVerifier
+	}
+	return sig, nil
 }
 
 // Encode returns token containing given payload and encoded using most recent
@@ -120,7 +174,7 @@ func (v *Vault) Encode(payload interface{}) ([]byte, error) {
 
 // Decode unpack token payload into provided structure. Token signature is
 // validated by matching algorithm and key id information from the header with
-// vault's signers.
+// vault's verifiers.
 func (v *Vault) Decode(payload interface{}, token []byte) error {
 	chunks := bytes.Split(token, []byte("."))
 	if len(chunks) != 3 {
@@ -163,11 +217,11 @@ func (v *Vault) Decode(payload interface{}, token []byte) error {
 		return fmt.Errorf("cannot JSON decode payload: %s", err)
 	}
 
-	sig, err := v.signerByID(header.KeyID)
+	ver, err := v.verifierByID(header.KeyID)
 	if err != nil {
 		return err
 	}
-	if header.Algorithm != sig.Algorithm() {
+	if header.Algorithm != ver.Algorithm() {
 		return ErrInvalidSigner
 	}
 
@@ -178,7 +232,7 @@ func (v *Vault) Decode(payload interface{}, token []byte) error {
 		b = buf[:n]
 	}
 	beforeSign := token[:len(token)-len(chunks[2])-1]
-	if err := sig.Verify(b, beforeSign); err != nil {
+	if err := ver.Verify(b, beforeSign); err != nil {
 		return err
 	}
 
@@ -193,3 +247,54 @@ func (v *Vault) Decode(payload interface{}, token []byte) error {
 
 	return nil
 }
+
+// encode serialize given data into JSON and return it's base64 representation
+// with base64 padding removed.
+func encodeJSON(x interface{}) ([]byte, error) {
+	b, err := json.Marshal(x)
+	if err != nil {
+		return nil, err
+	}
+	return encode(b)
+}
+
+func encode(b []byte) ([]byte, error) {
+	b64 := make([]byte, base64.URLEncoding.EncodedLen(len(b)))
+	enc.Encode(b64, b)
+	b64 = bytes.TrimRight(b64, "=")
+	return b64, nil
+}
+
+// fixPadding return given base64 encoded string with padding characters added
+// if necessary.
+func fixPadding(b []byte) []byte {
+	if n := len(b) % 4; n > 0 {
+		res := make([]byte, len(b), len(b)+4)
+		copy(res, b)
+		return append(res, bytes.Repeat([]byte("="), 4-n)...)
+	}
+	return b
+}
+
+var enc = base64.URLEncoding
+
+func maxlen(a [][]byte) int {
+	max := 0
+	for _, b := range a {
+		if l := len(b); l > max {
+			max = l
+		}
+	}
+	return max
+}
+
+var (
+	ErrAlgorithmNotAvailable = errors.New("algorithm not available")
+	ErrInvalidSignature      = errors.New("invalid signature")
+	ErrMalformedToken        = errors.New("malformed token")
+	ErrInvalidSigner         = errors.New("invalid signer algorithm")
+	ErrNoSigner              = errors.New("no signer")
+	ErrNoVerifier            = errors.New("no verifier")
+	ErrExpired               = errors.New("expired")
+	ErrNotReady              = errors.New("token not yet active")
+)
