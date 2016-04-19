@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 // Vault is register holding information about signers and keys used to create
@@ -298,3 +300,15 @@ var (
 	ErrExpired               = errors.New("expired")
 	ErrNotReady              = errors.New("token not yet active")
 )
+
+func WithVault(ctx context.Context, v *Vault) context.Context {
+	return context.WithValue(ctx, "stamp:vault", v)
+}
+
+func GetVault(ctx context.Context) *Vault {
+	v := ctx.Value("stamp:vault")
+	if v == nil {
+		panic("vault not present in the context")
+	}
+	return v.(*Vault)
+}
