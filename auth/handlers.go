@@ -63,7 +63,7 @@ func LoginHandler(provider string) web.HandlerFunc {
 		})
 		if err != nil {
 			log.Printf("cannot store in cache: %s", err)
-			web.StdJSONErr(w, http.StatusInternalServerError)
+			web.StdJSONResp(w, http.StatusInternalServerError)
 			return
 		}
 		web.JSONRedirect(w, url, http.StatusTemporaryRedirect)
