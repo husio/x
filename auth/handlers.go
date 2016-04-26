@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/go-github/github"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 
@@ -119,7 +118,7 @@ func HandleLoginCallback(ctx context.Context, w http.ResponseWriter, r *http.Req
 		web.JSONRedirect(w, "/", http.StatusTemporaryRedirect)
 		return
 	}
-	cli := github.NewClient(conf.Client(oauth2.NoContext, token))
+	cli := google.NewClient(conf.Client(oauth2.NoContext, token))
 	user, _, err := cli.Users.Get("")
 	if err != nil {
 		log.Printf("cannot get user: %s", err)

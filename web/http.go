@@ -201,3 +201,10 @@ func StdJSONHandler(code int) HandlerFunc {
 		StdJSONResp(w, code)
 	}
 }
+
+func StaticHandler(root string) HandlerFunc {
+	h := http.StripPrefix("/"+root, http.FileServer(http.Dir(root)))
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r)
+	}
+}
