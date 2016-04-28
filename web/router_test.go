@@ -25,17 +25,17 @@ func TestRouter(t *testing.T) {
 	}
 
 	rt := NewRouter(Routes{
-		{"GET", `/x/{w:\w+}/{n:\d+}`, testhandler(11, "w", "n")},
-		{"GET", `/x/{n:\d+}/{w:\w+}`, testhandler(12, "w", "n")},
-		{"GET", `/x/{n:\d+}-{w:\w+}`, testhandler(13, "w", "n")},
+		{`/x/{w:\w+}/{n:\d+}`, testhandler(11, "w", "n"), "GET"},
+		{`/x/{n:\d+}/{w:\w+}`, testhandler(12, "w", "n"), "GET"},
+		{`/x/{n:\d+}-{w:\w+}`, testhandler(13, "w", "n"), "GET"},
 
-		{"GET", `/x/321`, testhandler(22)},
-		{"GET", `/x/{first}`, testhandler(21, "first")},
+		{`/x/321`, testhandler(22), "GET"},
+		{`/x/{first}`, testhandler(21, "first"), "GET"},
 
-		{"GET", `/`, testhandler(31)},
-		{"GET", `/{a}/{b}`, testhandler(32, "a", "b")},
-		{"GET", `/{a}/{b}/{c}`, testhandler(33, "a", "b", "c")},
-		{"GET", `/{a}/{b}/{c}/{d}`, testhandler(34, "a", "b", "c", "d")},
+		{`/`, testhandler(31), "GET"},
+		{`/{a}/{b}`, testhandler(32, "a", "b"), "GET"},
+		{`/{a}/{b}/{c}`, testhandler(33, "a", "b", "c"), "GET"},
+		{`/{a}/{b}/{c}/{d}`, testhandler(34, "a", "b", "c", "d"), "GET"},
 	})
 
 	var testCases = []struct {

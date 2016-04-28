@@ -15,15 +15,15 @@ type HandlerFunc func(context.Context, http.ResponseWriter, *http.Request)
 
 // Route binds together HTTP method, path and handler function.
 type Route struct {
-	// Method is string that can represent one or more, coma separated HTTP
-	// methods that this route should match.
-	Methods string
 	// Path defines regexp-like pattern match used to determine if route should
 	// handle request.
 	Path string
 	// Func defines HTTP handler that is used to serve request when route is
 	// matching.
 	Func HandlerFunc
+	// Method is string that can represent one or more, coma separated HTTP
+	// methods that this route should match.
+	Methods string
 }
 
 // AnyMethod is shortcut definition for
